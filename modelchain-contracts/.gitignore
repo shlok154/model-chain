@@ -1,0 +1,8 @@
+node_modules/
+dist/
+artifacts/
+cache/
+ignition/deployments/
+
+# NEVER commit this — contains your private key
+.env

@@ -1,36 +1,3 @@
-// ModelChain Marketplace Contract ABI
-// Deploy this contract on Sepolia testnet for real integration
-export const MARKETPLACE_ABI = [
-  // Events
-  "event ModelListed(uint256 indexed modelId, address indexed creator, uint256 price, string ipfsHash)",
-  "event ModelPurchased(uint256 indexed modelId, address indexed buyer, uint256 price)",
-  "event EarningsWithdrawn(address indexed creator, uint256 amount)",
-
-  // Read functions
-  "function getModel(uint256 modelId) view returns (tuple(uint256 id, string name, string description, uint256 price, address creator, string ipfsHash, string version, string license, string category, uint256 royaltyPercent, uint256 purchases))",
-  "function getAllModels() view returns (tuple(uint256 id, string name, string description, uint256 price, address creator, string ipfsHash, string version, string license, string category, uint256 royaltyPercent, uint256 purchases)[])",
-  "function getCreatorEarnings(address creator) view returns (uint256)",
-  "function hasAccess(uint256 modelId, address user) view returns (bool)",
-  "function modelCount() view returns (uint256)",
-
-  // Write functions
-  "function listModel(string name, string description, uint256 price, string ipfsHash, string version, string license, string category, uint256 royaltyPercent) returns (uint256)",
-  "function purchaseModel(uint256 modelId) payable",
-  "function withdrawEarnings()",
-];
-
-// Sepolia testnet contract address — replace with your deployed address
-export const MARKETPLACE_ADDRESS =
-  "0x3131f5ea556cbeBe3A09F3AB42EDb8F3C630240D";
-
-export const SUPPORTED_CHAINS: Record<number, string> = {
-  1: "Ethereum Mainnet",
-  11155111: "Sepolia Testnet",
-  31337: "Hardhat Local",
-};
-
-// Solidity source for reference — deploy with Hardhat/Foundry
-export const CONTRACT_SOURCE = `
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -119,4 +86,3 @@ contract ModelChainMarketplace {
         return access[modelId][user];
     }
 }
-`;
