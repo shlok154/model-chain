@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Routes, Route } from "react-router-dom";
+import { Analytics } from "@vercel/analytics/react";
 import { WalletProvider } from "./context/WalletContext";
 import Sidebar from "./components/Sidebar";
 import Footer from "./components/Footer";
@@ -48,6 +49,7 @@ export default function App() {
           <Footer />
         </div>
       </div>
+      <Analytics />
     </WalletProvider>
   );
 }
