@@ -20,8 +20,7 @@ export const MARKETPLACE_ABI = [
 ];
 
 // Sepolia testnet contract address — replace with your deployed address
-export const MARKETPLACE_ADDRESS =
-  "0x3131f5ea556cbeBe3A09F3AB42EDb8F3C630240D";
+export const MARKETPLACE_ADDRESS: string = "0x3131f5ea556cbeBe3A09F3AB42EDb8F3C630240D";
 
 export const SUPPORTED_CHAINS: Record<number, string> = {
   1: "Ethereum Mainnet",
