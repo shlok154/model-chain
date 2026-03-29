@@ -12,42 +12,27 @@ import {
   BarChart, Bar, CartesianGrid,
 } from "recharts";
 
-// ── Inline star display (read-only) ───────────────────────────────────────────
+// ── Read-only star display ────────────────────────────────────────
 function Stars({ value }: { value: number }) {
   const rounded = Math.round(value * 2) / 2;
   return (
-    <span className="inline-stars" aria-label={`${value} stars`}>
+    <div className="flex gap-0.5 items-center" aria-label={`${value} stars`}>
       {[1, 2, 3, 4, 5].map((s) => (
-        <span key={s} className={`inline-star ${rounded >= s ? "inline-star--full" : rounded >= s - 0.5 ? "inline-star--half" : ""}`}>
+        <span key={s} className={`text-[10px] ${rounded >= s ? "text-secondary" : "text-on-surface-variant/20"}`}>
           ★
         </span>
       ))}
-    </span>
+    </div>
   );
 }
 
-function SkeletonCard({ height = 80 }: { height?: number }) {
-  return <div className="skeleton-card" style={{ height }} />;
-}
-
-// ── Change badge (+12.3% / -5.1%) ──────────────────────────────────────────────
-function ChangeBadge({ pct }: { pct: number | null | undefined }) {
-  if (pct == null) return <span className="change-badge change-badge--neutral">no prior data</span>;
-  const positive = pct >= 0;
-  return (
-    <span className={`change-badge ${positive ? "change-badge--up" : "change-badge--down"}`}>
-      {positive ? "▲" : "▼"} {Math.abs(pct)}%
-    </span>
-  );
-}
-
-// ── Chart tooltip ──────────────────────────────────────────────────────────────
+// ── Chart tooltip ─────────────────────────────────────────────────
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", fontSize: 12 }}>
-      <p style={{ fontWeight: 600, marginBottom: 2 }}>{label}</p>
-      <p style={{ color: "var(--accent)" }}>{payload[0].value} ETH</p>
+    <div className="glass-card p-3 rounded-xl shadow-2xl">
+      <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">{label}</p>
+      <p className="font-label text-sm font-bold text-secondary">{payload[0].value} ETH</p>
     </div>
   );
 }
@@ -56,7 +41,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { address } = useWallet();
   const { isAuthenticated, signIn, isSigning } = useAuth();
-  const { data: stats, isLoading, error: statsError } = useDashboardStats(address);
+  const { data: stats, isLoading } = useDashboardStats(address);
   const { data: insights, isLoading: insightsLoading } = useTelemetryInsights();
   const { withdrawEarnings, getEarnings } = useMarketplace();
   const { toUsd } = useEthPrice();
@@ -65,6 +50,11 @@ export default function DashboardPage() {
   const [earningsLoaded, setEarningsLoaded] = useState(false);
   const [tx,             setTx]             = useState<Transaction>({ hash: null, status: "idle", error: null });
   const [isWithdrawing,  setIsWithdrawing]  = useState(false);
+  const [chartView,      setChartView]      = useState<"30D" | "7D">("30D");
+
+  const chartData = chartView === "7D"
+    ? (stats?.weekly_revenue_mtd ?? []).map(d => ({ ...d, month: d.week }))
+    : (stats?.monthly_revenue ?? []);
 
   useEffect(() => {
     if (address) {
@@ -86,10 +76,7 @@ export default function DashboardPage() {
   };
 
   const canWithdraw = earningsLoaded && parseFloat(earnings) > 0 && !!address;
-  const pc = stats?.period_comparison;
-  const br = stats?.buyer_retention;
 
-  // ── Stat cards config ──────────────────────────────────────────────────────
   const conversionRate = insights
     ? (insights.conversion_funnel.purchased > 0 && insights.conversion_funnel.viewed > 0)
       ? ((insights.conversion_funnel.purchased / insights.conversion_funnel.viewed) * 100).toFixed(1) + "%"
@@ -98,290 +85,338 @@ export default function DashboardPage() {
 
   const statCards = stats
     ? [
-        { label: "Total Earned",    value: `${stats.total_earned} ETH`, sub: toUsd(String(stats.total_earned)) },
-        { label: "Total Sales",     value: String(stats.total_sales),   sub: `${stats.unique_buyers} unique buyers` },
-        { label: "Models Listed",   value: String(stats.models_listed), sub: "" },
-        { label: "Conversion Rate", value: conversionRate,              sub: "view → purchase" },
-        ...(stats.avg_rating != null
-          ? [{ label: "Avg Rating", value: `${stats.avg_rating} / 5`, sub: `${stats.total_reviews} review${stats.total_reviews !== 1 ? "s" : ""}` }]
-          : []),
-      ]
+        {
+          label: "NET EARNINGS",
+          value: `${stats.total_earned} ETH`,
+          sub: toUsd(String(stats.total_earned)),
+          icon: "payments",
+          delta: stats.period_comparison?.revenue_change_pct ?? null,
+        },
+        {
+          label: "SALES VOLUME",
+          value: String(stats.total_sales),
+          sub: `${stats.unique_buyers} DIRECT BUYERS`,
+          icon: "trending_up",
+          delta: stats.period_comparison?.sales_change_pct ?? null,
+        },
+        {
+          label: "NODES DEPLOYED",
+          value: String(stats.models_listed),
+          sub: "ACTIVE ON-CHAIN",
+          icon: "hub",
+          delta: null,
+        },
+        {
+          label: "CONVERSION RATE",
+          value: conversionRate,
+          sub: "VIEW → LICENSE",
+          icon: "conversion_path",
+          delta: null,
+        },
+      ] as { label: string; value: string; sub: string; icon: string; delta: number | null }[]
     : [];
 
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className="animate-page-in min-h-screen pt-[88px] pb-[144px] px-6 lg:px-20 space-y-12">
+
+      {/* ── HEADER ── */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Creator analytics &amp; earnings</p>
+          <h1 className="font-syne font-black text-4xl lg:text-7xl tracking-tighter uppercase leading-none">Dashboard</h1>
+          <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest mt-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
+            ANALYTICS_OVERVIEW // CREATOR NODE
+          </p>
         </div>
         {address && !isAuthenticated && (
-          <button className="btn btn--secondary" onClick={signIn} disabled={isSigning}>
-            {isSigning ? "Signing…" : "⬡ Sign In to Sync"}
+          <button
+            className="glass-card px-6 py-3 rounded-xl font-label text-xs uppercase tracking-widest hover:border-secondary/30 transition-colors group"
+            onClick={signIn}
+            disabled={isSigning}
+          >
+            {isSigning ? "SIGNING..." : (
+              <span className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg">hexagon</span>
+                SIGN IN TO SYNC
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </span>
+            )}
           </button>
         )}
       </div>
 
-      {/* ── Banners ────────────────────────────────────────────────────────── */}
+      {/* ── NO WALLET STATE ── */}
       {!address && (
-        <div className="info-banner">Connect your wallet to see your real earnings and analytics.</div>
-      )}
-      {address && !isAuthenticated && (
-        <div className="warn-banner">
-          <strong>Showing demo data.</strong> Sign in with your wallet to unlock server-synced analytics.
+        <div className="p-8 bg-secondary-container/5 border border-dashed border-secondary-container/20 rounded-2xl flex items-center justify-center text-center">
+          <p className="font-label text-xs text-secondary uppercase tracking-widest leading-relaxed">
+            Establish wallet connection to retrieve<br className="hidden md:block" />
+            private node metrics and earnings.
+          </p>
         </div>
       )}
-      {statsError && (
-        <div className="error-banner">Could not load analytics — showing cached or demo data.</div>
-      )}
 
-      {/* ── Data consistency warning */}
+      {/* ── DATA DRIFT WARNING ── */}
       {stats?.consistency_warnings && stats.consistency_warnings.length > 0 && (
-        <div className="warn-banner" style={{ fontSize: 13 }}>
-          ⚠ Purchase counter drift detected — analytics may be slightly inaccurate.
-          {stats.consistency_warnings.map((w) => <code key={w} style={{ marginRight: 6 }}>{w}</code>)}
+        <div className="p-4 bg-error/10 border border-error/20 text-error rounded-xl font-label text-[10px] uppercase tracking-widest">
+          ⚠ DATA DRIFT DETECTED: ON-CHAIN SYNC IN PROGRESS. METRICS MAY VARY BY ±0.2%
         </div>
       )}
 
-      <div className="dashboard-grid">
-        {/* ── Stat cards ──────────────────────────────────────────────────── */}
-        <div className="stats-row stats-row--5">
-          {isLoading
-            ? Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="stat-card"><SkeletonCard height={54} /></div>
-              ))
-            : statCards.map((s) => (
-                <div key={s.label} className="stat-card">
-                  <span className="stat-label">{s.label}</span>
-                  <span className="stat-value">{s.value}</span>
-                  {s.sub && <span className="stat-sub">{s.sub}</span>}
-                </div>
-              ))}
-        </div>
-
-        {/* ── Period comparison (30d vs prior 30d) ────────────────────────── */}
-        {(isLoading || pc) && (
-          <div className="chart-card chart-card--compact">
-            <h3 className="card-title">Last 30 Days vs Prior 30 Days</h3>
-            {isLoading ? <SkeletonCard height={60} /> : pc ? (
-              <div className="period-comparison-row">
-                <div className="period-stat">
-                  <span className="period-label">Revenue</span>
-                  <span className="period-value">{pc.current_30d_revenue} ETH</span>
-                  <ChangeBadge pct={pc.revenue_change_pct} />
-                </div>
-                <div className="period-divider" />
-                <div className="period-stat">
-                  <span className="period-label">Sales</span>
-                  <span className="period-value">{pc.current_30d_sales}</span>
-                  <ChangeBadge pct={pc.sales_change_pct} />
-                </div>
-                {br && (
-                  <>
-                    <div className="period-divider" />
-                    <div className="period-stat">
-                      <span className="period-label">Repeat Buyers</span>
-                      <span className="period-value">{br.repeat_buyers}</span>
-                      <span className="change-badge change-badge--neutral">{br.retention_rate}% retention</span>
-                    </div>
-                  </>
+      {/* ── STAT CARDS ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-stagger">
+        {isLoading
+          ? Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-40 rounded-3xl" />)
+          : statCards.map((s) => (
+            <div key={s.label} className="glass-card rounded-3xl p-6 hover:-translate-y-[4px] transition-transform duration-300">
+              <div className="flex items-start justify-between mb-4">
+                <h3 className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">{s.label}</h3>
+                <span className="material-symbols-outlined text-xl text-secondary-container">{s.icon}</span>
+              </div>
+              <div className="font-label text-3xl font-bold tracking-tighter text-on-surface mb-2">
+                {/^\d+$/.test(s.value) ? Number(s.value).toLocaleString() : s.value}
+              </div>
+              <div className="flex items-center justify-between gap-2 mt-auto">
+                <div className="font-label text-[10px] text-secondary uppercase tracking-tighter">{s.sub}</div>
+                {s.delta != null && (
+                  <span className={`font-label text-[9px] px-2 py-0.5 rounded-full border uppercase tracking-widest ${
+                    s.delta >= 0
+                      ? "text-secondary border-secondary/20 bg-secondary/5"
+                      : "text-error border-error/20 bg-error/5"
+                  }`}>
+                    {s.delta >= 0 ? "+" : ""}{s.delta.toFixed(1)}%
+                  </span>
                 )}
               </div>
-            ) : null}
-          </div>
-        )}
+            </div>
+          ))
+        }
+      </div>
 
-        {/* ── Monthly revenue — Recharts area chart ────────────────────────── */}
-        <div className="chart-card">
-          <h3 className="card-title">Monthly Revenue (ETH)</h3>
+      {/* ── CHARTS ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* Revenue chart */}
+        <div className="lg:col-span-2 glass-card rounded-3xl p-8 space-y-8">
+          <div className="flex justify-between items-center">
+            <h3 className="font-label text-xs uppercase tracking-widest">Market Performance</h3>
+            <div className="flex items-center gap-1">
+              {(["30D", "7D"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setChartView(v)}
+                  className={`font-label text-[10px] uppercase tracking-widest px-3 py-1 rounded-lg transition-all ${
+                    chartView === v
+                      ? "bg-secondary-container/20 text-secondary border border-secondary/30"
+                      : "text-on-surface-variant hover:text-secondary border border-transparent"
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
           {isLoading ? (
-            <SkeletonCard height={200} />
+            <div className="skeleton h-64 rounded-xl" />
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={stats?.monthly_revenue ?? []} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="month" tick={{ fill: "var(--text-muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTooltip />} />
-                <Area type="monotone" dataKey="eth" stroke="var(--accent)" fill="url(#revenueGrad)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%"  stopColor="#bd9dff" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#bd9dff" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fill: "#606471", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#606471", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<ChartTooltip />} cursor={{ stroke: "rgba(189,157,255,0.2)", strokeWidth: 2 }} />
+                  <Area type="monotone" dataKey="eth" stroke="#bd9dff" fill="url(#revenueGrad)" strokeWidth={2} animationDuration={1200} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </div>
 
-        {/* ── Two-column bottom section ────────────────────────────────────── */}
-        <div className="dashboard-bottom">
-          {/* Top models table */}
-          {(isLoading || (stats?.top_models && stats.top_models.length > 0)) && (
-            <div className="chart-card chart-card--grow">
-              <h3 className="card-title">Model Performance</h3>
-              {isLoading ? (
-                <SkeletonCard height={160} />
-              ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table className="perf-table">
-                    <thead>
-                      <tr>
-                        <th>Model</th>
-                        <th>Price</th>
-                        <th>Sales</th>
-                        <th>Revenue</th>
-                        <th>Rating</th>
-                        <th>Share</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(stats?.top_models ?? []).map((m) => (
-                        <tr
-                          key={m.id}
-                          className="perf-table__row"
-                          onClick={() => navigate(`/model/${m.id}`)}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => e.key === "Enter" && navigate(`/model/${m.id}`)}
-                        >
-                          <td>
-                            <span style={{ fontWeight: 600 }}>{m.name}</span>
-                            {m.category && <span className="model-category" style={{ marginLeft: 8 }}>{m.category}</span>}
-                          </td>
-                          <td>{m.price_eth} ETH</td>
-                          <td>{m.actual_purchases ?? m.purchases}</td>
-                          <td style={{ fontWeight: 600, color: "var(--green)" }}>{m.revenue} ETH</td>
-                          <td>
-                            {m.avg_rating != null ? (
-                              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                <Stars value={m.avg_rating} />
-                                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{m.avg_rating}</span>
-                              </span>
-                            ) : "—"}
-                          </td>
-                          <td>
-                            {m.revenue_share_pct != null && (
-                              <span className="change-badge change-badge--neutral">{m.revenue_share_pct}%</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+        {/* Earnings vault */}
+        <div className="glass-card neural-glow rounded-3xl p-8 border-t-2 border-primary-container/30 space-y-8 flex flex-col justify-between">
+          <div className="space-y-6">
+            <h3 className="font-label text-xs uppercase tracking-widest pb-4 border-b border-outline-variant/10">Earnings Vault</h3>
+            {!earningsLoaded && address ? (
+              <div className="skeleton h-16 w-3/4 rounded-lg" />
+            ) : (
+              <div className="space-y-2">
+                <div className="font-label text-5xl font-bold tracking-tighter text-on-surface">
+                  {earnings} <span className="text-secondary">ETH</span>
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* Right column: category + withdraw */}
-          <div className="dashboard-right-col">
-            {(isLoading || (stats?.category_breakdown && Object.keys(stats.category_breakdown).length > 0)) && (
-              <div className="chart-card">
-                <h3 className="card-title">Models by Category</h3>
-                {isLoading ? (
-                  <SkeletonCard height={80} />
-                ) : (
-                  <div className="category-breakdown">
-                    {Object.entries(stats?.category_breakdown ?? {}).map(([cat, count]) => (
-                      <div key={cat} className="category-row">
-                        <span className="model-category">{cat}</span>
-                        <span className="category-count">{count as number} model{(count as number) !== 1 ? "s" : ""}</span>
-                      </div>
-                    ))}
-                  </div>
+                {parseFloat(earnings) > 0 && (
+                  <p className="font-label text-sm text-on-surface-variant uppercase">≈ {toUsd(earnings)} USD</p>
                 )}
               </div>
             )}
 
-            {/* Withdraw card */}
-            <div className="withdraw-card">
-              <h3 className="card-title">On-Chain Earnings</h3>
-              {!earningsLoaded && address ? (
-                <SkeletonCard height={40} />
-              ) : (
-                <>
-                  <p className="withdraw-amount">{earnings} ETH</p>
-                  {parseFloat(earnings) > 0 && (
-                    <p className="withdraw-usd">{toUsd(earnings)}</p>
-                  )}
-                </>
-              )}
-              <button
-                className="btn btn--primary"
-                onClick={handleWithdraw}
-                disabled={!canWithdraw || isWithdrawing}
-                title={!address ? "Connect wallet" : parseFloat(earnings) === 0 ? "No earnings to withdraw" : ""}
-              >
-                {isWithdrawing ? "Withdrawing…" : "Withdraw Earnings"}
-              </button>
-              <TxBadge tx={tx} />
-              {!address && <p className="hint-text">Connect wallet to withdraw.</p>}
-              {address && parseFloat(earnings) === 0 && earningsLoaded && (
-                <p className="hint-text">No on-chain earnings yet.</p>
-              )}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center font-label text-[10px] text-on-surface-variant">
+                <span>NETWORK LOAD</span>
+                <span className="text-secondary">
+                  {stats ? `${Math.min((stats.total_sales / 1000) * 100, 100).toFixed(0)}%` : "—"}
+                </span>
+              </div>
+              <div className="h-1.5 w-full bg-surface-container-highest rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-secondary transition-all duration-700 ease-out rounded-full"
+                  style={{
+                    width: stats
+                      ? `${Math.min((stats.total_sales / 1000) * 100, 100).toFixed(1)}%`
+                      : "0%"
+                  }}
+                />
+              </div>
             </div>
+          </div>
+
+          <div className="space-y-3">
+            <button
+              className="w-full h-14 bg-gradient-to-r from-primary-container to-secondary-container text-on-primary-fixed font-syne font-bold uppercase rounded-2xl shadow-[0_0_20px_rgba(189,157,255,0.3)] hover:shadow-[0_0_35px_rgba(189,157,255,0.5)] hover:scale-[1.02] active:scale-95 transition-all text-sm tracking-wide disabled:opacity-30 disabled:grayscale"
+              onClick={handleWithdraw}
+              disabled={!canWithdraw || isWithdrawing}
+            >
+              {isWithdrawing ? "PROCESSING..." : "WITHDRAW FUNDS"}
+            </button>
+            <TxBadge tx={tx} />
+            {!address && <p className="text-center font-label text-[10px] text-on-surface-variant uppercase">Connect wallet to access vault</p>}
+          </div>
+        </div>
+      </div>
+
+      {/* ── BOTTOM SECTION ── */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-12">
+
+        {/* Model performance table */}
+        <div className="space-y-6">
+          <h3 className="font-syne font-bold text-2xl tracking-tighter uppercase leading-none">Node Efficiency</h3>
+          <div className="overflow-hidden rounded-3xl border border-outline-variant/10 bg-surface-container/50">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-outline-variant/20 bg-surface-container-high/40">
+                  <th className="px-6 py-4 font-label text-[10px] text-on-surface-variant uppercase tracking-widest">Model ID</th>
+                  <th className="px-6 py-4 font-label text-[10px] text-on-surface-variant uppercase tracking-widest">Metrics</th>
+                  <th className="px-6 py-4 font-label text-[10px] text-on-surface-variant uppercase tracking-widest text-right">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading
+                  ? Array.from({ length: 3 }).map((_, i) => (
+                    <tr key={i}><td colSpan={3} className="px-6 py-4"><div className="skeleton h-12 rounded-lg" /></td></tr>
+                  ))
+                  : (stats?.top_models ?? []).length === 0
+                    ? <tr><td colSpan={3} className="px-6 py-20 text-center font-label text-xs text-on-surface-variant uppercase">No active nodes detected</td></tr>
+                    : (stats?.top_models ?? []).map((m) => (
+                      <tr
+                        key={m.id}
+                        className="group hover:bg-white/5 transition-colors cursor-pointer border-b border-outline-variant/5 last:border-0"
+                        onClick={() => navigate(`/model/${m.id}`)}
+                      >
+                        <td className="px-6 py-5">
+                          <span className="block font-syne font-bold text-sm uppercase tracking-tight group-hover:text-secondary transition-colors mb-1">{m.name}</span>
+                          <span className="px-2 py-0.5 bg-surface-container-highest rounded font-label text-[9px] text-on-surface-variant uppercase">
+                            {(m as any).category || "GENERAL"}
+                          </span>
+                        </td>
+                        <td className="px-6 py-5">
+                          <div className="flex flex-col gap-1">
+                            <Stars value={m.avg_rating ?? 0} />
+                            <span className="font-label text-[10px] text-on-surface-variant">{m.actual_purchases ?? m.purchases} SALES</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-5 text-right">
+                          <span className="font-label text-sm font-bold">{m.revenue} <span className="text-secondary">ETH</span></span>
+                        </td>
+                      </tr>
+                    ))
+                }
+              </tbody>
+            </table>
           </div>
         </div>
 
-        {/* ── Failure Insights Panel ───────────────────────────────────────── */}
-        <div className="chart-card">
-          <h3 className="card-title">Failure Insights</h3>
-          <p className="card-subtitle">Top reasons users fail to complete transactions</p>
-          {insightsLoading ? (
-            <SkeletonCard height={120} />
-          ) : insights && insights.failure_reasons.length > 0 ? (
-            <div style={{ marginTop: 16 }}>
-              <ResponsiveContainer width="100%" height={Math.max(120, insights.failure_reasons.length * 40)}>
-                <BarChart data={insights.failure_reasons} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                  <XAxis type="number" tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    type="category" dataKey="reason" width={180}
-                    tick={{ fill: "var(--text-2)", fontSize: 12 }} axisLine={false} tickLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{ background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-                  />
-                  <Bar dataKey="count" fill="var(--red)" radius={[0, 4, 4, 0]} barSize={20} />
-                </BarChart>
-              </ResponsiveContainer>
+        {/* System telemetry + failure chart */}
+        <div className="space-y-10">
+          <div>
+            <h3 className="font-syne font-bold text-2xl tracking-tighter uppercase leading-none mb-6">System Telemetry</h3>
+            <div className="grid grid-cols-2 gap-4">
+              {insightsLoading ? (
+                Array.from({ length: 2 }).map((_, i) => <div key={i} className="skeleton h-24 rounded-2xl" />)
+              ) : (
+                <>
+                  <div className="glass-card rounded-2xl p-6">
+                    <span className="font-label text-[9px] text-on-surface-variant uppercase tracking-widest block mb-2">Network Latency</span>
+                    <div className="font-label text-2xl font-bold text-on-surface">{insights?.rpc_health.avg_latency_ms ?? 0}MS</div>
+                  </div>
+                  <div className="glass-card rounded-2xl p-6">
+                    <span className="font-label text-[9px] text-on-surface-variant uppercase tracking-widest block mb-2">TX Success Rate</span>
+                    <div className="font-label text-2xl font-bold text-secondary">{insights?.rpc_health.success_rate ?? 0}%</div>
+                  </div>
+                </>
+              )}
             </div>
-          ) : (
-            <div className="empty-state" style={{ marginTop: 12 }}>No transaction failures recorded yet.</div>
-          )}
-        </div>
+          </div>
 
-        {/* ── RPC Reliability Panel ────────────────────────────────────────── */}
-        <div className="chart-card">
-          <h3 className="card-title">RPC Reliability</h3>
-          {insightsLoading ? (
-            <SkeletonCard height={80} />
-          ) : insights ? (
-            <div style={{ display: "flex", gap: 32, flexWrap: "wrap", marginTop: 12 }}>
-              <div className="stat-card" style={{ flex: 1, minWidth: 140 }}>
-                <span className="stat-label">Success Rate</span>
-                <span className="stat-value" style={{ color: insights.rpc_health.success_rate >= 95 ? "var(--green)" : "var(--red)" }}>
-                  {insights.rpc_health.success_rate}%
-                </span>
-                <div style={{ marginTop: 8, height: 6, background: "var(--bg-3)", borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${insights.rpc_health.success_rate}%`, background: insights.rpc_health.success_rate >= 95 ? "var(--green)" : "var(--red)", borderRadius: 3, transition: "width 0.5s ease" }} />
-                </div>
+          <div>
+            <h3 className="font-label text-xs uppercase tracking-widest mb-4">Failure Distribution</h3>
+            {insights && insights.failure_reasons.length > 0 ? (
+              <div className="h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={insights.failure_reasons} layout="vertical">
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="reason" type="category" width={140} tick={{ fill: "#606471", fontSize: 9, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      cursor={{ fill: "rgba(255,255,255,0.02)" }}
+                      contentStyle={{ background: "#161923", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", fontSize: "10px", fontFamily: "JetBrains Mono" }}
+                    />
+                    <Bar dataKey="count" fill="#bd9dff" radius={[0, 4, 4, 0]} barSize={12} />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-              <div className="stat-card" style={{ flex: 1, minWidth: 140 }}>
-                <span className="stat-label">Avg Latency</span>
-                <span className="stat-value">{insights.rpc_health.avg_latency_ms}ms</span>
+            ) : (
+              <div className="py-12 text-center border border-dashed border-outline-variant/20 rounded-2xl font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
+                No failure data points recorded in this epoch
               </div>
-              <div className="stat-card" style={{ flex: 1, minWidth: 140 }}>
-                <span className="stat-label">Total Calls</span>
-                <span className="stat-value">{insights.rpc_health.total_calls}</span>
-                <span className="stat-sub">{insights.rpc_health.errors} errors</span>
-              </div>
-            </div>
-          ) : null}
+            )}
+          </div>
         </div>
       </div>
+
+      {/* ── BUYER RETENTION ── */}
+      {stats?.buyer_retention && (
+        <div className="glass-card rounded-3xl p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
+          <div className="space-y-1">
+            <h3 className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">Repeat Buyer Signal</h3>
+            <div className="font-syne font-black text-3xl tracking-tighter">
+              {stats.buyer_retention.retention_rate.toFixed(1)}
+              <span className="text-secondary text-xl">%</span>
+            </div>
+            <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
+              Retention Rate
+            </p>
+          </div>
+          <div className="flex-1 flex flex-col gap-2 max-w-sm">
+            <div className="flex justify-between font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
+              <span>Repeat Buyers</span>
+              <span className="text-secondary">{stats.buyer_retention.repeat_buyers} / {stats.unique_buyers}</span>
+            </div>
+            <div className="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-primary-container to-secondary-container rounded-full transition-all duration-700"
+                style={{ width: `${Math.min(stats.buyer_retention.retention_rate, 100).toFixed(1)}%` }}
+              />
+            </div>
+            <p className="font-label text-[9px] text-on-surface-variant/60 uppercase tracking-widest">
+              {stats.buyer_retention.repeat_buyers} users returned for additional license acquisitions
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

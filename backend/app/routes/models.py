@@ -8,6 +8,7 @@ Security model (Fix 4):
   - The backend validates the JWT before every write operation
   - Supabase is treated as a storage layer; FastAPI enforces access control
 """
+import os
 import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from supabase import create_client, Client
@@ -126,6 +127,11 @@ async def simulate_purchase(
     supabase: Client = Depends(get_service_supabase),
 ):
     """Simulates a model purchase when running in demo mode without smart contracts."""
+    if os.getenv("ALLOW_SIMULATE", "false").lower() != "true":
+        raise HTTPException(
+            status_code=403,
+            detail="Simulation endpoints are disabled. Set ALLOW_SIMULATE=true to enable.",
+        )
     supabase.rpc("record_purchase", {
         "p_model_id":      body.model_id,
         "p_buyer_address": wallet,
@@ -147,6 +153,11 @@ async def simulate_list(
     supabase: Client = Depends(get_service_supabase),
 ):
     """Simulates a model listing when running in demo mode without smart contracts."""
+    if os.getenv("ALLOW_SIMULATE", "false").lower() != "true":
+        raise HTTPException(
+            status_code=403,
+            detail="Simulation endpoints are disabled. Set ALLOW_SIMULATE=true to enable.",
+        )
     result = supabase.table("models").insert({
         "name": body.name,
         "description": body.description,

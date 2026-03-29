@@ -7,56 +7,66 @@ import { useWallet } from "../context/WalletContext";
 import { useAuth } from "../context/AuthContext";
 import { useEthPrice } from "../hooks/useEthPrice";
 import TxBadge from "../components/TxBadge";
+import NeuralChip from "../components/NeuralChip";
 import { decryptBlob } from "../lib/encryption";
 import type { Transaction } from "../types";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-// ── Star rating component ──────────────────────────────────────────────────
 function StarRating({ value, onChange }: { value: number; onChange?: (v: number) => void }) {
   const [hover, setHover] = useState(0);
   return (
-    <div className="star-rating">
+    <div className="flex gap-1">
       {[1, 2, 3, 4, 5].map((star) => (
         <button
           key={star}
-          className={`star ${(hover || value) >= star ? "star--active" : ""}`}
+          className={`text-xl transition-colors ${
+            (hover || value) >= star ? "text-secondary" : "text-on-surface-variant/30"
+          }`}
           onClick={() => onChange?.(star)}
           onMouseEnter={() => onChange && setHover(star)}
           onMouseLeave={() => onChange && setHover(0)}
           disabled={!onChange}
-          aria-label={`${star} star`}
-        >★</button>
+        >
+          {(hover || value) >= star ? "★" : "☆"}
+        </button>
       ))}
     </div>
   );
 }
 
 export default function ModelDetailPage() {
-  const { id }     = useParams<{ id: string }>();
-  const navigate   = useNavigate();
-  const modelId    = Number(id);
+  const { id }   = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const modelId  = Number(id);
 
-  // Phase 5: React Query — no manual fetchModels needed
   const { data: model, isLoading, isError } = useModel(modelId);
   const { data: reviews = [] }              = useModelReviews(modelId);
   const submitReview                        = useSubmitReview(modelId);
 
-  const { purchaseModel, checkAccess } = useMarketplace();
-  const { address, connect }           = useWallet();
+  const { purchaseModel, checkAccess }     = useMarketplace();
+  const { address, connect }              = useWallet();
   const { isAuthenticated, isSigning, signIn, authFetch } = useAuth();
-  const { toUsd }                      = useEthPrice();
-  const { owns, markOwned }            = useOwnership();
+  const { toUsd, ethPrice }               = useEthPrice();
+  const { owns, markOwned }               = useOwnership();
 
-  const [hasAccess,     setHasAccess]     = useState<boolean | null>(null); // null = still checking
+  const [hasAccess,     setHasAccess]     = useState<boolean | null>(null);
   const [tx,            setTx]            = useState<Transaction>({ hash: null, status: "idle", error: null });
   const [isPurchasing,  setIsPurchasing]  = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
-  // Check access: Supabase purchase record first (fast), then on-chain contract as
-  // source-of-truth. The on-chain check catches users whose DB record hasn't synced yet
-  // due to event-listener lag — they paid, so they should get access immediately.
+  // Mouse-tilt handler for avatar card (desktop only; CSS disables on mobile)
+  const handleTilt = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left)  / rect.width  - 0.5;
+    const y = (e.clientY - rect.top)   / rect.height - 0.5;
+    e.currentTarget.style.transform = `rotateY(${x * 14}deg) rotateX(${-y * 10}deg) scale(1.04)`;
+  };
+  const resetTilt = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.style.transform = "rotateY(0deg) rotateX(0deg) scale(1)";
+  };
+
   useEffect(() => {
     if (!model || !address) { setHasAccess(null); return; }
     let cancelled = false;
@@ -66,40 +76,28 @@ export default function ModelDetailPage() {
 
   const isOwned = owns(modelId) || hasAccess;
 
-  // Phase 4: Review form state
   const [reviewRating,  setReviewRating]  = useState(0);
   const [reviewComment, setReviewComment] = useState("");
   const [reviewSuccess, setReviewSuccess] = useState(false);
 
-  /** Download via authenticated backend proxy with client-side decryption. */
   const handleSecureDownload = async () => {
     if (!model) return;
     setIsDownloading(true);
     setDownloadError(null);
     try {
-      // Step 1: Fetch encrypted blob (purchase-gated)
       const res = await authFetch(`${API_BASE}/api/ipfs/download/${model.ipfsHash}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail ?? `Download failed (${res.status})`);
       }
       const encryptedBlob = await res.blob();
-
-      // Step 2: Fetch the decryption key (purchase-gated, returns null key if not encrypted)
       const keyRes = await authFetch(`${API_BASE}/api/ipfs/key/${model.ipfsHash}`);
-      if (!keyRes.ok) {
-        // Key endpoint unavailable — serve blob as-is (legacy unencrypted model)
-        _triggerDownload(encryptedBlob, model);
-        return;
-      }
+      if (!keyRes.ok) { _triggerDownload(encryptedBlob, model); return; }
       const { encrypted, key_b64 } = await keyRes.json();
-
-      // Step 3: Decrypt in browser if needed, then trigger browser download
       if (encrypted && key_b64) {
         const plainBlob = await decryptBlob(encryptedBlob, key_b64);
         _triggerDownload(plainBlob, model);
       } else {
-        // File was not encrypted (legacy upload) — serve directly
         _triggerDownload(encryptedBlob, model);
       }
     } catch (e: any) {
@@ -127,7 +125,6 @@ export default function ModelDetailPage() {
     setTx(result);
     if (result.status === "confirmed") {
       markOwned(modelId);
-      // Re-verify on-chain after tx confirms — source of truth is the contract
       const verified = await checkAccess(modelId);
       setHasAccess(verified);
     }
@@ -142,210 +139,301 @@ export default function ModelDetailPage() {
     setReviewComment("");
   };
 
+  // ── LOADING STATE ──
   if (isLoading) {
     return (
-      <div className="page">
-        <button className="back-btn" onClick={() => navigate(-1)}>← Back</button>
-        <div className="loading-placeholder">Loading model…</div>
-      </div>
-    );
-  }
-
-  if (isError || !model) {
-    return (
-      <div className="page">
-        <button className="back-btn" onClick={() => navigate(-1)}>← Back</button>
-        <div className="empty-state">
-          <p>Model not found.</p>
-          <button className="btn btn--primary" onClick={() => navigate("/")}>Back to Marketplace</button>
+      <div className="animate-page-in min-h-screen pt-24 px-6 lg:px-20">
+        <div className="skeleton h-8 w-32 mb-12 rounded-lg" />
+        <div className="flex flex-col lg:flex-row gap-12">
+          <div className="flex-1 space-y-6">
+            <div className="skeleton h-64 rounded-2xl" />
+            <div className="skeleton h-32 rounded-2xl" />
+          </div>
+          <div className="w-full lg:w-96">
+            <div className="skeleton h-96 rounded-2xl" />
+          </div>
         </div>
       </div>
     );
   }
 
-  const avgRating = (model as any).avg_rating ?? null;
+  // ── ERROR STATE ──
+  if (isError || !model) {
+    return (
+      <div className="animate-page-in min-h-screen flex items-center justify-center pt-24">
+        <div className="glass-card rounded-2xl p-12 text-center space-y-4">
+          <h2 className="font-syne font-black text-4xl uppercase">Core Model Not Found</h2>
+          <button
+            className="font-label text-xs uppercase tracking-widest text-secondary underline underline-offset-8 hover:opacity-70 transition-opacity"
+            onClick={() => navigate("/marketplace")}
+          >
+            Return to Marketplace
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const avgRating   = (model as any).avg_rating ?? null;
   const reviewCount = (model as any).review_count ?? reviews.length;
 
   return (
-    <div className="page">
-      <button className="back-btn" onClick={() => navigate(-1)}>← Back</button>
+    <div className="animate-page-in min-h-screen pt-[88px] pb-[144px] px-6 lg:px-20">
+      {/* Back button */}
+      <button
+        className="flex items-center gap-2 font-label text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-on-surface mb-10 group mt-4"
+        onClick={() => navigate(-1)}
+      >
+        <span className="group-hover:-translate-x-1 transition-transform">←</span>
+        Back to network
+      </button>
 
-      <div className="detail-layout">
-        {/* ── Left: model info ───────────────────────────────────── */}
-        <div className="detail-main">
-          <div className="detail-header">
-            <div className="detail-thumbnail">
-              <img
-                src={`https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(model.name)}&backgroundColor=080a0f&size=160`}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                width="160"
-                height="160"
-              />
+      <div className="flex flex-col lg:flex-row gap-12 items-start">
+
+        {/* ── MAIN COLUMN ── */}
+        <div className="flex-1 space-y-12">
+
+          {/* Hero header */}
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row gap-8 items-start">
+              {/* Avatar */}
+              <div
+                className="w-40 h-40 rounded-[32px] bg-surface-container border border-outline-variant/10 overflow-hidden shadow-2xl flex-shrink-0 tilt-card"
+                onMouseMove={handleTilt}
+                onMouseLeave={resetTilt}
+              >
+                <img
+                  src={`https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(model.name)}&backgroundColor=0b0e17`}
+                  alt={`${model.name} model avatar`}
+                  loading="lazy"
+                  className="w-full h-full object-cover p-4 opacity-90"
+                />
+              </div>
+
+              {/* Title block */}
+              <div className="flex-1 pt-2 space-y-4">
+                {/* Creator cluster — category chip + creator info */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <NeuralChip label={model.category.toUpperCase()} />
+                  <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
+                    by <span className="text-secondary">{model.creator.slice(0, 8)}...{model.creator.slice(-6)}</span>
+                  </span>
+                </div>
+
+                <h1 className="font-syne font-black text-4xl lg:text-6xl tracking-tighter uppercase leading-none">
+                  {model.name}
+                </h1>
+
+                {avgRating && (
+                  <div className="flex items-center gap-4">
+                    <StarRating value={Math.round(avgRating)} />
+                    <span className="font-label text-xs text-on-surface-variant">
+                      {avgRating} / 5.0 ({reviewCount} Verified Reviews)
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
-            <span className="model-category">{model.category}</span>
-            <h1 className="detail-title">{model.name}</h1>
-            {/* Phase 4: average rating display */}
-            {avgRating && (
-              <div className="avg-rating">
-                <StarRating value={Math.round(avgRating)} />
-                <span className="avg-rating-label">{avgRating} ({reviewCount} review{reviewCount !== 1 ? "s" : ""})</span>
+
+            <p className="font-body text-lg text-on-surface-variant leading-relaxed max-w-3xl">
+              {model.description}
+            </p>
+          </div>
+
+          {/* Meta grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: "VERSION",  value: model.version },
+              { label: "LICENSE",  value: model.license },
+              { label: "ROYALTY",  value: `${model.royaltyPercent}%` },
+              { label: "ADOPTION", value: `${model.purchases} BUYERS` },
+            ].map((stat) => (
+              <div key={stat.label} className="glass-card rounded-xl p-5">
+                <div className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest mb-2">{stat.label}</div>
+                <div className="font-label text-lg font-bold text-on-surface tracking-tighter uppercase truncate">{stat.value}</div>
               </div>
-            )}
-            <p className="detail-desc">{model.description}</p>
+            ))}
           </div>
 
-          <div className="detail-meta-grid">
-            <div className="meta-item"><span className="meta-label">Version</span><span className="meta-value">{model.version}</span></div>
-            <div className="meta-item"><span className="meta-label">License</span><span className="meta-value">{model.license}</span></div>
-            <div className="meta-item"><span className="meta-label">Royalty</span><span className="meta-value">{model.royaltyPercent}%</span></div>
-            <div className="meta-item"><span className="meta-label">Total Buyers</span><span className="meta-value">{model.purchases}</span></div>
-          </div>
-
-          <div className="ipfs-block">
-            <span className="meta-label">IPFS Hash</span>
-            {/* Fix 7: no direct IPFS link — hash shown for transparency but download is gated */}
-            <span className="ipfs-link" title="Download available after purchase">
-              {(model.ipfsHash ?? "").slice(0, 24)}…{(model.ipfsHash ?? "").slice(-8)}
-            </span>
-          </div>
-
-          <div className="creator-block">
-            <span className="meta-label">Creator</span>
-            <span className="creator-addr">{model.creator}</span>
-          </div>
-
-          {/* Phase 4: Reviews section */}
-          <div className="reviews-section">
-            <h3 className="section-title">Reviews</h3>
-
-            {/* Submit review — gated by purchase and sign-in */}
-            {!hasAccess && address && (
-              <div className="review-gate-notice">
-                Purchase this model to leave a review.
+          {/* Provenance block */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+              Immutable Provenance
+            </div>
+            <div className="glass-card rounded-2xl p-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest block mb-2">IPFS CONTENT HASH</span>
+                  <p className="font-label text-xs break-all text-secondary/80">{model.ipfsHash}</p>
+                </div>
+                <div className="md:text-right">
+                  <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest block mb-2">CREATOR AUTHORITY</span>
+                  <p className="font-label text-xs text-on-surface-variant max-w-[240px] truncate">
+                    {model.creator}
+                  </p>
+                </div>
               </div>
-            )}
+            </div>
+          </div>
+
+          {/* Reviews section */}
+          <div className="space-y-10 pt-10">
+            <div className="neural-divider" />
+            <h3 className="font-syne font-bold text-2xl tracking-tighter uppercase">Verified Feedback</h3>
 
             {hasAccess && !reviewSuccess && (
-              <div className="review-form">
-                <p className="review-form-title">Leave a review</p>
+              <div className="glass-card rounded-2xl p-8 border-t-2 border-secondary-container/30 space-y-6">
+                <h4 className="font-label text-xs uppercase tracking-widest">Leave an Evaluation</h4>
                 <StarRating value={reviewRating} onChange={setReviewRating} />
                 <textarea
-                  className="field-input field-textarea"
-                  placeholder="Share your experience with this model…"
+                  className="w-full bg-surface-container-high rounded-xl p-5 text-sm border border-outline-variant/10 focus:ring-2 focus:ring-secondary/20 outline-none transition-all min-h-[120px] font-body"
+                  placeholder="Analyze your experience with this model..."
                   value={reviewComment}
                   onChange={(e) => setReviewComment(e.target.value)}
-                  rows={3}
                   disabled={!isAuthenticated}
                 />
-                {/* Separate sign-in prompt — never nested inside/disabled the submit button */}
+
                 {!isAuthenticated ? (
-                  <div className="review-signin-prompt">
-                    <p className="review-signin-text">Sign in with your wallet to submit a review.</p>
-                    <button className="btn btn--primary" onClick={signIn} disabled={isSigning}>
-                      {isSigning ? "Signing…" : "Sign In with Wallet"}
+                  <div className="flex flex-col items-start gap-4 p-4 border border-dashed border-outline-variant/20 rounded-xl">
+                    <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">Signature required to submit</p>
+                    <button
+                      className="glass-card px-6 py-2 rounded-lg font-label text-xs uppercase tracking-widest hover:border-secondary/30 transition-colors"
+                      onClick={signIn}
+                      disabled={isSigning}
+                    >
+                      {isSigning ? "WAITING..." : "Sign to verify"}
                     </button>
                   </div>
                 ) : (
                   <button
-                    className="btn btn--primary"
+                    className="bg-gradient-to-r from-secondary-container to-secondary text-on-secondary font-syne font-bold uppercase py-3 px-10 rounded-xl active:scale-95 transition-transform disabled:grayscale"
                     onClick={handleReview}
                     disabled={!reviewRating || submitReview.isPending}
                   >
-                    {submitReview.isPending ? "Submitting…" : reviewRating ? "Submit Review" : "Select a rating first"}
+                    {submitReview.isPending ? "PROCESSING..." : "SUBMIT EVALUATION"}
                   </button>
                 )}
-                {submitReview.isError && (
-                  <div className="error-banner">{(submitReview.error as any)?.message ?? "Failed to submit review."}</div>
-                )}
               </div>
             )}
-            {reviewSuccess && <div className="info-banner">✓ Review submitted — thanks!</div>}
 
-            {/* Review list */}
-            {reviews.length === 0 ? (
-              <p className="no-reviews">No reviews yet. Be the first!</p>
-            ) : (
-              <div className="review-list">
-                {reviews.map((r: any) => (
-                  <div key={r.id} className="review-card">
-                    <div className="review-header">
-                      <StarRating value={r.rating} />
-                      <span className="review-author">
-                        {r.reviewer?.display_name ?? `${(r.user_address ?? "").slice(0, 6)}…${(r.user_address ?? "").slice(-4)}`}
-                      </span>
-                      <span className="review-date">
-                        {new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                      </span>
+            {reviewSuccess && (
+              <div className="p-4 bg-secondary-container/10 border border-secondary-container/20 text-secondary rounded-xl font-label text-xs uppercase tracking-widest">
+                Evaluation received. Thank you for your input.
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {reviews.length === 0 ? (
+                <div className="col-span-full py-20 text-center border border-dashed border-outline-variant/20 rounded-2xl font-label text-xs text-on-surface-variant uppercase tracking-widest">
+                  No public data points available
+                </div>
+              ) : reviews.map((r: any) => (
+                <div key={r.id} className="glass-card rounded-2xl p-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <StarRating value={r.rating} />
+                    <span className="font-label text-[10px] text-on-surface-variant">
+                      {new Date(r.created_at).toLocaleDateString("en-US", { month: "short", year: "numeric" }).toUpperCase()}
+                    </span>
+                  </div>
+                  <p className="font-body text-sm leading-relaxed italic text-on-surface-variant">"{r.comment}"</p>
+                  <div className="flex items-center gap-3 pt-4 border-t border-outline-variant/10">
+                    <div className="w-7 h-7 rounded-full bg-secondary/20 flex items-center justify-center font-label text-[10px] text-secondary">
+                      {(r.reviewer?.display_name ?? r.user_address ?? "A")[0].toUpperCase()}
                     </div>
-                    {r.comment && <p className="review-comment">{r.comment}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ── Right: purchase card ───────────────────────────────── */}
-        <div className="detail-sidebar">
-          <div className="purchase-card">
-            <p className="purchase-price">{model.price} ETH</p>
-            <p className="purchase-usd">{toUsd(model.price)}</p>
-
-            {hasAccess === null && address && !owns(modelId) ? (
-              <button className="btn btn--primary btn--full" disabled>Checking access…</button>
-            ) : isOwned ? (
-              <div className="access-granted">
-                <div className="success-banner" style={{ background: "rgba(34, 211, 160, 0.1)", border: "1px solid rgba(34, 211, 160, 0.2)", color: "var(--green)", padding: "10px", borderRadius: "8px", margin: "0 auto 16px", fontSize: "13px", fontWeight: 600, width: "100%", textAlign: "center" }}>
-                  Access unlocked ✅
-                </div>
-                
-                <div className="trust-indicators" style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "20px", fontSize: "13px", color: "var(--text-2)", background: "var(--bg-2)", padding: "16px", borderRadius: "8px", border: "1px solid var(--border)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    <span>Verified on-chain</span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    <span>Secure IPFS download</span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    <span>Content-addressed integrity</span>
+                    <span className="font-label text-[10px] uppercase tracking-widest">
+                      {r.reviewer?.display_name ?? `${(r.user_address ?? "").slice(0, 6)}...${(r.user_address ?? "").slice(-4)}`}
+                    </span>
                   </div>
                 </div>
-
-                <button
-                  className="btn btn--primary"
-                  onClick={handleSecureDownload}
-                  disabled={isDownloading}
-                  style={{ width: "100%" }}
-                >
-                  {isDownloading ? "Decrypting & saving…" : "Download Model ↓"}
-                </button>
-                {downloadError && (
-                  <div className="error-banner">{downloadError}</div>
-                )}
-              </div>
-            ) : (
-              <button className="btn btn--primary btn--full" onClick={handlePurchase} disabled={isPurchasing || !!isOwned}>
-                {!address ? "Connect Wallet to Purchase"
-                  : isOwned ? "Already Owned"
-                  : isPurchasing ? "Processing transaction…"
-                  : `Purchase for ${model.price} ETH`}
-              </button>
-            )}
-
-            <TxBadge tx={tx} />
-            <div className="purchase-info">
-              <p>• Instant on-chain transfer of access</p>
-              <p>• IPFS-pinned model weights included</p>
-              <p>• {model.royaltyPercent}% royalty to creator on resale</p>
-              <p>• 7-day escrow with buyer protection</p>
+              ))}
             </div>
           </div>
         </div>
+
+        {/* ── PURCHASE SIDEBAR ── */}
+        <aside className="w-full lg:w-96 space-y-6 lg:sticky lg:top-[88px]">
+          <div className="glass-card neural-glow rounded-[32px] p-8 border-t-2 border-primary-container/30 space-y-8">
+            {/* Price */}
+            <div className="space-y-1">
+              <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">Asset Valuation</span>
+              <div className="flex items-baseline gap-2">
+                <span className="font-label text-4xl font-bold">{model.price}</span>
+                <span className="font-label text-2xl font-bold text-secondary">ETH</span>
+              </div>
+              <p className="font-label text-sm text-on-surface-variant">≈ {toUsd(model.price)} USD</p>
+            </div>
+
+            {/* CTA */}
+            <div className="space-y-3">
+              {hasAccess === null && address && !owns(modelId) ? (
+                <button className="w-full h-14 bg-surface-container rounded-2xl font-label text-xs text-on-surface-variant uppercase tracking-widest animate-pulse" disabled>
+                  Verifying Node Access...
+                </button>
+              ) : isOwned ? (
+                <div className="space-y-3">
+                  <div className="w-full bg-secondary-container/10 border border-secondary-container/20 p-4 rounded-xl flex items-center justify-center gap-2 text-secondary font-label text-xs uppercase tracking-widest">
+                    <span className="w-2 h-2 rounded-full bg-secondary" />
+                    Node Link Active
+                  </div>
+                  <button
+                    className="w-full h-14 bg-gradient-to-r from-primary-container to-secondary-container text-on-primary-fixed font-syne font-bold uppercase rounded-2xl shadow-[0_0_20px_rgba(189,157,255,0.3)] hover:shadow-[0_0_35px_rgba(189,157,255,0.5)] hover:scale-[1.02] active:scale-95 transition-all text-sm tracking-wide disabled:opacity-50"
+                    onClick={handleSecureDownload}
+                    disabled={isDownloading}
+                  >
+                    {isDownloading ? "DECRYPTING..." : "INITIALIZE DOWNLOAD ↓"}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="w-full h-14 bg-gradient-to-r from-primary-container to-secondary-container text-on-primary-fixed font-syne font-bold uppercase rounded-2xl shadow-[0_0_20px_rgba(189,157,255,0.3)] hover:shadow-[0_0_35px_rgba(189,157,255,0.5)] hover:scale-[1.02] active:scale-95 transition-all text-sm tracking-wide"
+                  onClick={handlePurchase}
+                  disabled={isPurchasing}
+                >
+                  {!address ? "CONNECT WALLET"
+                    : isPurchasing ? "PROCESSING TX..."
+                    : "ACQUIRE LICENSE"}
+                </button>
+              )}
+              {downloadError && (
+                <p className="text-center font-label text-[10px] text-error uppercase tracking-widest animate-pulse">{downloadError}</p>
+              )}
+            </div>
+
+            <TxBadge tx={tx} />
+
+            {/* Network context — uses live ETH price + model metadata */}
+            <div className="pt-6 border-t border-outline-variant/10 space-y-3">
+              <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest block">
+                Network Context
+              </span>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="font-label text-[10px] text-on-surface-variant/60 uppercase">ETH/USD</span>
+                  <span className="font-label text-[10px] text-secondary">
+                    {ethPrice ? `$${ethPrice.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-label text-[10px] text-on-surface-variant/60 uppercase">Listed</span>
+                  <span className="font-label text-[10px] text-on-surface-variant">
+                    {new Date((model as any).createdAt ?? (model as any).created_at ?? Date.now())
+                      .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                      .toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-label text-[10px] text-on-surface-variant/60 uppercase">Buyers</span>
+                  <span className="font-label text-[10px] text-on-surface-variant">{model.purchases}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-label text-[10px] text-on-surface-variant/60 uppercase">Royalty</span>
+                  <span className="font-label text-[10px] text-on-surface-variant">{model.royaltyPercent}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   );

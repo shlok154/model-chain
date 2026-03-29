@@ -198,3 +198,107 @@ async def test_verify_correct_signature_returns_token(client):
 async def test_refresh_invalid_token_returns_401(client):
     resp = client.post("/auth/refresh", headers={"Authorization": "Bearer not.a.valid.jwt"})
     assert resp.status_code == 401
+
+# ── Simulate endpoint guard (models.py) ───────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_simulate_purchase_blocked_by_default(client):
+    """simulate-purchase must return 403 when ALLOW_SIMULATE is not set."""
+    import os
+    os.environ.pop("ALLOW_SIMULATE", None)  # ensure not set
+
+    from app.main import app
+    from app.routes.models import get_service_supabase
+    
+    app.dependency_overrides[get_service_supabase] = lambda: MagicMock()
+
+    try:
+        resp = client.post("/api/models/simulate-purchase", json={
+            "model_id": 1,
+            "price_eth": 0.1,
+        })
+    finally:
+        app.dependency_overrides.pop(get_service_supabase, None)
+    assert resp.status_code == 403
+    assert "disabled" in resp.json()["detail"].lower()
+
+
+@pytest.mark.anyio
+async def test_simulate_purchase_allowed_with_env_flag(client):
+    """simulate-purchase must succeed when ALLOW_SIMULATE=true."""
+    import os
+    os.environ["ALLOW_SIMULATE"] = "true"
+    from app.main import app
+    from app.routes.models import get_service_supabase
+    try:
+        supa = MagicMock()
+        rpc_mock = MagicMock()
+        rpc_mock.execute.return_value = MagicMock(data=[{"id": 1}])
+        supa.rpc.return_value = rpc_mock
+
+        update_mock = MagicMock()
+        update_mock.eq.return_value = update_mock
+        update_mock.execute.return_value = MagicMock(data=[])
+        supa.table.return_value.update.return_value = update_mock
+
+        app.dependency_overrides[get_service_supabase] = lambda: supa
+
+        resp = client.post("/api/models/simulate-purchase", json={
+            "model_id": 1,
+            "price_eth": 0.1,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "simulated"
+    finally:
+        os.environ.pop("ALLOW_SIMULATE", None)
+        app.dependency_overrides.pop(get_service_supabase, None)
+
+
+# ── Public profile .maybe_single() fix (users.py) ────────────────────────────
+
+@pytest.mark.anyio
+async def test_get_public_profile_returns_200(client):
+    """`GET /api/users/{wallet}` must not crash with AttributeError."""
+    with patch("app.routes.users._supa") as mock_supa_fn:
+        supa = MagicMock()
+        res = MagicMock()
+        res.data = {
+            "wallet_address": "0xabc",
+            "display_name": "Test User",
+            "bio": None,
+            "avatar_url": None,
+            "twitter": None,
+            "github": None,
+            "is_verified": False,
+            "created_at": "2024-01-01T00:00:00",
+        }
+        supa.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = res
+        mock_supa_fn.return_value = supa
+
+        resp = client.get("/api/users/0xabc123")
+    assert resp.status_code == 200
+
+
+# ── Profile auto-creation for new wallets (users.py) ─────────────────────────
+
+@pytest.mark.anyio
+async def test_get_own_profile_creates_on_first_visit(client):
+    """GET /api/users/me must auto-create a blank profile for new wallets."""
+    with patch("app.routes.users._supa") as mock_supa_fn:
+        supa = MagicMock()
+
+        # First query — no existing row
+        select_res = MagicMock()
+        select_res.data = None
+        supa.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = select_res
+
+        # Upsert — returns the newly created row
+        upsert_res = MagicMock()
+        upsert_res.data = [{"wallet_address": "0x1234567890123456789012345678901234567890"}]
+        supa.table.return_value.upsert.return_value.select.return_value.execute.return_value = upsert_res
+
+        mock_supa_fn.return_value = supa
+
+        resp = client.get("/api/users/me")
+    assert resp.status_code == 200
+    assert "wallet_address" in resp.json()

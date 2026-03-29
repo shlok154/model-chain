@@ -1,5 +1,5 @@
-import { useState, lazy, Suspense } from "react";
-import { Routes, Route } from "react-router-dom";
+import { lazy, Suspense, useEffect } from "react";
+import { Routes, Route, useLocation } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { queryClient } from "./lib/queryClient";
@@ -13,6 +13,7 @@ import Footer from "./components/Footer";
 import MarketplacePage from "./pages/MarketplacePage";
 
 // All other pages are lazy-loaded — each becomes a separate JS chunk.
+const LandingPage     = lazy(() => import("./pages/LandingPage"));
 const DashboardPage   = lazy(() => import("./pages/DashboardPage"));
 const UploadPage      = lazy(() => import("./pages/UploadPage"));
 const WalletPage      = lazy(() => import("./pages/WalletPage"));
@@ -21,17 +22,35 @@ const ModelDetailPage = lazy(() => import("./pages/ModelDetailPage"));
 const InsightsPage    = lazy(() => import("./pages/InsightsPage"));
 const NotFoundPage    = lazy(() => import("./pages/NotFoundPage"));
 
-/** Inline skeleton shown while a lazy page chunk is downloading. */
+function usePageTitle() {
+  const location = useLocation();
+  useEffect(() => {
+    const titles: Record<string, string> = {
+      "/":            "ModelChain — Decentralized AI Marketplace",
+      "/marketplace": "Marketplace — ModelChain",
+      "/dashboard":   "Dashboard — ModelChain",
+      "/upload":      "Deploy Model — ModelChain",
+      "/wallet":      "Neural Vault — ModelChain",
+      "/profile":     "Profile — ModelChain",
+      "/insights":    "Telemetry — ModelChain",
+    };
+    // Model detail pages use a dynamic title — set a sensible default
+    const title = titles[location.pathname]
+      ?? (location.pathname.startsWith("/model/")
+        ? "Model Detail — ModelChain"
+        : "ModelChain");
+    document.title = title;
+  }, [location.pathname]);
+}
+
+/** Skeleton shown while a lazy chunk is downloading. */
 function PageSkeleton() {
   return (
-    <div className="page" style={{ paddingTop: 40 }}>
-      <div
-        className="model-card--skeleton"
-        style={{ height: 32, width: 220, marginBottom: 32, borderRadius: 8 }}
-      />
-      <div className="loading-grid">
+    <div className="p-10 mt-10">
+      <div className="skeleton h-8 w-56 mb-8 rounded-lg" />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {[...Array(6)].map((_, i) => (
-          <div key={i} className="model-card model-card--skeleton" />
+          <div key={i} className="skeleton h-64 rounded-2xl" />
         ))}
       </div>
     </div>
@@ -39,9 +58,8 @@ function PageSkeleton() {
 }
 
 /**
- * Wrap each lazy route in its OWN Suspense so only the switching page
- * shows a skeleton — the sidebar, header, and footer are never suspended.
- * A single global Suspense around <Routes> would blank the whole shell.
+ * Wrap each lazy route in its OWN Suspense — only the switching page
+ * shows a skeleton; the nav and footer are never suspended.
  */
 function S({ children }: { children: React.ReactNode }) {
   return (
@@ -52,41 +70,45 @@ function S({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
+  usePageTitle();
   return (
     <QueryClientProvider client={queryClient}>
       <WalletProvider>
         <AuthProvider>
-          <div className="app-shell">
-            {sidebarOpen && (
-              <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
-            )}
-            <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-            <div className="app-content">
-              <header className="mobile-header">
-                <button className="hamburger" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
-                  <span /><span /><span />
-                </button>
-                <span className="mobile-logo">⬡ ModelChain</span>
-              </header>
-              <main className="app-main">
-                {/* Each lazy route has its own Suspense boundary so only the
-                    transitioning page suspends — never the whole shell. */}
-                <Routes>
-                  <Route path="/"          element={<MarketplacePage />} />
-                  <Route path="/dashboard" element={<S><DashboardPage /></S>} />
-                  <Route path="/upload"    element={<S><UploadPage /></S>} />
-                  <Route path="/wallet"    element={<S><WalletPage /></S>} />
-                  <Route path="/profile"   element={<S><ProfilePage /></S>} />
-                  <Route path="/model/:id" element={<S><ModelDetailPage /></S>} />
-                  <Route path="/insights"  element={<S><InsightsPage /></S>} />
-                  <Route path="*"          element={<S><NotFoundPage /></S>} />
-                </Routes>
-              </main>
-              <Footer />
-            </div>
-          </div>
+          {/* Noise grain overlay */}
+          <div className="grain" aria-hidden="true" />
+
+          {/* Ambient glow blobs */}
+          <div
+            className="glow-blob"
+            style={{ width: 600, height: 600, background: "rgba(189,157,255,0.07)", top: -200, right: -200 }}
+            aria-hidden="true"
+          />
+          <div
+            className="glow-blob"
+            style={{ width: 500, height: 500, background: "rgba(0,238,211,0.05)", bottom: 50, left: -150 }}
+            aria-hidden="true"
+          />
+
+          {/* Navigation shell */}
+          <Sidebar />
+
+          {/* Main content */}
+          <main className="relative z-10">
+            <Routes>
+              <Route path="/"          element={<S><LandingPage /></S>} />
+              <Route path="/marketplace" element={<MarketplacePage />} />
+              <Route path="/dashboard" element={<S><DashboardPage /></S>} />
+              <Route path="/upload"    element={<S><UploadPage /></S>} />
+              <Route path="/wallet"    element={<S><WalletPage /></S>} />
+              <Route path="/profile"   element={<S><ProfilePage /></S>} />
+              <Route path="/model/:id" element={<S><ModelDetailPage /></S>} />
+              <Route path="/insights"  element={<S><InsightsPage /></S>} />
+              <Route path="*"          element={<S><NotFoundPage /></S>} />
+            </Routes>
+          </main>
+
+          <Footer />
         </AuthProvider>
       </WalletProvider>
       {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}

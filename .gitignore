@@ -60,3 +60,26 @@ backend/app/.listener_checkpoint
 
 # Misc
 .cache/
+
+# Vite / React
+dist-ssr/
+.eslintcache
+
+# Python Caches & Coverage
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+
+# Hardhat Coverage
+coverage/
+coverage.json
+
+# PaaS Deployments
+.vercel/
+.railway/
+
+# macOS temp files
+._*

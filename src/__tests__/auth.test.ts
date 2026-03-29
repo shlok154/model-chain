@@ -155,3 +155,59 @@ describe("Pagination logic", () => {
     expect(0 === 0).toBe(true);
   });
 });
+
+// ── Period delta badge logic (DashboardPage) ──────────────────────────────────
+function formatDelta(delta: number | null): { label: string; positive: boolean } | null {
+  if (delta == null) return null;
+  return {
+    label: `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`,
+    positive: delta >= 0,
+  };
+}
+
+describe("formatDelta", () => {
+  it("returns null for null delta", () => {
+    expect(formatDelta(null)).toBeNull();
+  });
+
+  it("formats a positive delta with leading +", () => {
+    const result = formatDelta(59.0);
+    expect(result?.label).toBe("+59.0%");
+    expect(result?.positive).toBe(true);
+  });
+
+  it("formats a negative delta without leading +", () => {
+    const result = formatDelta(-12.5);
+    expect(result?.label).toBe("-12.5%");
+    expect(result?.positive).toBe(false);
+  });
+
+  it("treats zero as positive", () => {
+    const result = formatDelta(0);
+    expect(result?.label).toBe("+0.0%");
+    expect(result?.positive).toBe(true);
+  });
+});
+
+// ── Retention bar width calculation (DashboardPage) ───────────────────────────
+function retentionBarWidth(retentionRate: number): string {
+  return `${Math.min(retentionRate, 100).toFixed(1)}%`;
+}
+
+describe("retentionBarWidth", () => {
+  it("returns exact rate when below 100", () => {
+    expect(retentionBarWidth(13.8)).toBe("13.8%");
+  });
+
+  it("caps at 100% when rate exceeds 100", () => {
+    expect(retentionBarWidth(120)).toBe("100.0%");
+  });
+
+  it("handles 0% correctly", () => {
+    expect(retentionBarWidth(0)).toBe("0.0%");
+  });
+
+  it("handles exactly 100%", () => {
+    expect(retentionBarWidth(100)).toBe("100.0%");
+  });
+});

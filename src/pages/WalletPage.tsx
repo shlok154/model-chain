@@ -48,11 +48,6 @@ interface AdminData {
 }
 
 // ── Purchases hook ─────────────────────────────────────────────────────────────
-// Direct Supabase reads fail here because the browser Supabase client uses the
-// anon key without the app JWT injected, so the "Buyers read own purchases" RLS
-// policy (keyed on request.jwt.claims) always returns zero rows.
-// We route through /api/users/me/purchases which validates the JWT in FastAPI
-// and uses the service key with an explicit wallet filter.
 
 function useMyPurchases(address: string | null) {
   const { token } = useAuth();
@@ -60,15 +55,11 @@ function useMyPurchases(address: string | null) {
     queryKey: ["purchases", address],
     queryFn: async (): Promise<EscrowRow[]> => {
       if (!address) return [];
-
-      // Primary: backend API (JWT-authenticated)
       if (token) {
         try {
           return await api.get<EscrowRow[]>("/api/users/me/purchases", token);
         } catch { /* fall through */ }
       }
-
-      // Fallback: direct Supabase (only works if RLS is open or anon policy allows)
       if (isSupabaseReady()) {
         const { data } = await supabase
           .from("purchases")
@@ -80,7 +71,6 @@ function useMyPurchases(address: string | null) {
           model_name: row.models?.name ?? `Model #${row.model_id}`,
         }));
       }
-
       return [];
     },
     enabled: !!address,
@@ -98,17 +88,14 @@ function useConfirmDelivery() {
   return useMutation({
     mutationFn: async ({ modelId }: { modelId: number }) => {
       if (!provider) throw new Error("Wallet not connected");
-      const signer = await provider.getSigner();
-      const contract = new ethers.Contract(MARKETPLACE_ADDRESS, MARKETPLACE_ABI, signer);
-
-      const buyerAddress = await signer.getAddress();
-      const escrowId = await contract.buyerEscrow(modelId, buyerAddress);
+      const signer    = await provider.getSigner();
+      const contract  = new ethers.Contract(MARKETPLACE_ADDRESS, MARKETPLACE_ABI, signer);
+      const buyerAddr = await signer.getAddress();
+      const escrowId  = await contract.buyerEscrow(modelId, buyerAddr);
       if (escrowId === 0n) throw new Error("No escrow found for this purchase");
-
       const escrow = await contract.escrows(escrowId);
       if (escrow.released) throw new Error("Escrow already released");
       if (escrow.refunded) throw new Error("Escrow was refunded");
-
       const tx = await contract.confirmDelivery(escrowId);
       await tx.wait();
       return { escrowId: Number(escrowId), txHash: tx.hash };
@@ -134,30 +121,25 @@ function useAdminData(token: string | null, role: string | null) {
 
 function useWithdrawPlatformFees() {
   const { provider } = useWallet();
-  const qc = useQueryClient();
+  const qc           = useQueryClient();
 
   return useMutation({
     mutationFn: async () => {
       if (!provider) throw new Error("Wallet not connected");
       const signer   = await provider.getSigner();
       const contract = new ethers.Contract(MARKETPLACE_ADDRESS, MARKETPLACE_ABI, signer);
-
-      // Confirm caller is the contract owner before submitting
-      const owner = await contract.owner();
-      const caller = await signer.getAddress();
+      const owner    = await contract.owner();
+      const caller   = await signer.getAddress();
       if (owner.toLowerCase() !== caller.toLowerCase()) {
         throw new Error("Only the contract owner can withdraw platform fees.");
       }
-
       const earnings = await contract.platformEarnings();
       if (earnings === 0n) throw new Error("No platform fees to withdraw.");
-
-      const tx = await contract.withdrawPlatformFees();
+      const tx      = await contract.withdrawPlatformFees();
       const receipt = await tx.wait();
       return { txHash: tx.hash, amountEth: Number(earnings) / 1e18, blockNumber: receipt.blockNumber };
     },
     onSuccess: () => {
-      // Refresh admin panel data
       qc.invalidateQueries({ queryKey: ["admin", "platform"] });
     },
   });
@@ -168,14 +150,14 @@ function useWithdrawPlatformFees() {
 export default function WalletPage() {
   const navigate  = useNavigate();
   const { address, balance, chainId, isConnecting, error, connect, disconnect } = useWallet();
-  const { isAuthenticated, isSigning, signIn, signOut, authError, token, role } = useAuth();
+  const { isAuthenticated, isSigning, signIn, signOut, token, role } = useAuth();
   const { toUsd } = useEthPrice();
-  const [copied, setCopied] = useState(false);
+  const [copied,       setCopied]       = useState(false);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
 
   const { data: purchases = [], isLoading: purchasesLoading } = useMyPurchases(address);
-  const confirmDelivery        = useConfirmDelivery();
-  const withdrawPlatformFees   = useWithdrawPlatformFees();
+  const confirmDelivery     = useConfirmDelivery();
+  const withdrawPlatformFees = useWithdrawPlatformFees();
   const { data: adminData, isLoading: adminLoading } = useAdminData(token, role);
 
   const copy = () => {
@@ -185,8 +167,7 @@ export default function WalletPage() {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const chainName    = chainId ? (SUPPORTED_CHAINS[chainId] ?? `Chain ${chainId}`) : null;
-  const isUnsupported = chainId !== null && !SUPPORTED_CHAINS[chainId];
+  const chainName = chainId ? (SUPPORTED_CHAINS[chainId] ?? `Chain ${chainId}`) : null;
 
   const handleConfirm = async (modelId: number) => {
     setConfirmingId(modelId);
@@ -197,388 +178,327 @@ export default function WalletPage() {
     }
   };
 
-  // ── Auth model explainer (always visible) ──────────────────────────────────
-  const authModelCard = (
-    <div className="wallet-info-card" style={{ marginTop: 16 }}>
-      <h3 className="card-title" style={{ marginBottom: 8 }}>How Authentication Works</h3>
-      <div style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.7 }}>
-        <p style={{ marginBottom: 6 }}>
-          <strong>Wallet</strong> → proves your on-chain identity (MetaMask signature, no gas)
-        </p>
-        <p style={{ marginBottom: 6 }}>
-          <strong>JWT session</strong> → backend access token issued after wallet verification.
-          Sent as <code>Authorization: Bearer</code> on every API call.
-        </p>
-        <p style={{ marginBottom: 6 }}>
-          <strong>Smart contract</strong> → holds ETH payments and escrow. Only your private key
-          can authorise on-chain transactions.
-        </p>
-        <p style={{ marginBottom: 0, opacity: 0.7 }}>
-          FastAPI validates your JWT before any authenticated action.
-          Supabase RLS is an additional secondary layer. The IPFS CID is public
-          — downloads go through the authenticated backend proxy.
-        </p>
-      </div>
-    </div>
-  );
-
   return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Wallet</h1>
-          <p className="page-subtitle">Manage your Ethereum connection</p>
-        </div>
+    <div className="animate-page-in min-h-screen pt-[88px] pb-[144px] px-6 lg:px-20 space-y-12 max-w-7xl mx-auto">
+
+      {/* ── HEADER ── */}
+      <div className="space-y-2">
+        <h1 className="font-syne font-black text-4xl lg:text-6xl tracking-tighter uppercase leading-none">Neural Vault</h1>
+        <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
+          Identity &amp; Capital Command Center
+        </p>
       </div>
 
-      <div className="wallet-layout">
-        {error     && <div className="error-banner">{error}</div>}
-        {authError && <div className="error-banner">{authError}</div>}
-        {isUnsupported && (
-          <div className="warn-banner">
-            ⚠ Unsupported network. Please switch to Sepolia Testnet in MetaMask.
-          </div>
-        )}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
 
-        {!address ? (
-          <div className="connect-card">
-            <div className="connect-icon">◎</div>
-            <h2 className="connect-title">Connect Your Wallet</h2>
-            <p className="connect-desc">
-              Connect MetaMask to browse, purchase, and list AI models on-chain.
-            </p>
-            <button className="btn btn--primary btn--lg" onClick={connect} disabled={isConnecting}>
-              {isConnecting ? "Connecting…" : "Connect MetaMask"}
-            </button>
-            <p className="connect-hint">
-              Don't have MetaMask?{" "}
-              <a href="https://metamask.io" target="_blank" rel="noreferrer" className="text-link">
-                Install it here ↗
-              </a>
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* ── Wallet info card ──────────────────────────────────────────── */}
-            <div className="wallet-info-card">
-              <div className="wallet-status-row">
-                <span className="wallet-dot wallet-dot--lg" />
-                <span className="wallet-status-text">Connected</span>
-                {chainName && (
-                  <span className={`chain-badge ${isUnsupported ? "chain-badge--warn" : ""}`}>
-                    {chainName}
-                  </span>
-                )}
-                {role && (
-                  <span className="chain-badge" style={{ marginLeft: 4, background: role === "admin" ? "var(--accent)" : undefined }}>
-                    {role}
-                  </span>
-                )}
-              </div>
+        {/* ── LEFT COLUMN: WALLET & IDENTITY ── */}
+        <div className="lg:col-span-12 xl:col-span-5 space-y-8">
 
-              <div className="wallet-address-block">
-                <span className="meta-label">Address</span>
-                <div className="address-row">
-                  <span className="wallet-full-addr">{address}</span>
-                  <button className="copy-btn" onClick={copy}>
-                    {copied ? "✓ Copied" : "Copy"}
-                  </button>
+          {/* Wallet status card */}
+          <div className="glass-card neural-glow rounded-[40px] p-10 relative overflow-hidden space-y-10">
+            {/* Ambient glow */}
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-container/10 blur-[100px] -mr-32 -mt-32 rounded-full pointer-events-none" />
+
+            {!address ? (
+              <div className="text-center space-y-8 py-10 relative z-10">
+                <div className="w-24 h-24 rounded-full glass-card flex items-center justify-center mx-auto">
+                  <span className="material-symbols-outlined text-5xl text-on-surface-variant">account_balance_wallet</span>
                 </div>
-              </div>
-
-              <div className="wallet-balance-block">
-                <span className="meta-label">Balance</span>
-                <span className="wallet-balance">
-                  {balance !== null ? `${parseFloat(balance).toFixed(4)} ETH` : "Loading…"}
-                </span>
-                {balance && (
-                  <span className="hint-text">{toUsd(balance)}</span>
-                )}
-              </div>
-
-              <div className="wallet-actions">
-                <a href={`https://sepolia.etherscan.io/address/${address}`}
-                  target="_blank" rel="noreferrer" className="btn btn--secondary">
-                  View on Etherscan ↗
-                </a>
-                <button className="btn btn--danger" onClick={disconnect}>Disconnect</button>
-              </div>
-
-              {/* ── Trust Indicators ──────────────────────────────────────── */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--green)" }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                  <span>Wallet Connected</span>
-                </div>
-                {isAuthenticated && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--green)" }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    <span>Authenticated (JWT Active)</span>
-                  </div>
-                )}
-                {role && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--green)" }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    <span>Role: {role.charAt(0).toUpperCase() + role.slice(1)}</span>
-                  </div>
-                )}
-                {!isAuthenticated && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)" }}>
-                    <span style={{ width: 14, height: 14, display: "inline-block", textAlign: "center" }}>○</span>
-                    <span>Not authenticated — sign in to unlock full features</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* ── Auth sign-in card ─────────────────────────────────────────── */}
-            <div className="wallet-info-card" style={{ marginTop: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <p style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>
-                    {isAuthenticated ? "✓ Signed in to ModelChain" : "Sign in to ModelChain"}
-                  </p>
-                  <p className="hint-text">
-                    {isAuthenticated
-                      ? "Your session is active. Analytics, reviews, and uploads are fully synced."
-                      : "Sign a message with MetaMask to unlock full features — no gas required."}
+                <div className="space-y-2">
+                  <h2 className="font-syne font-black text-3xl uppercase tracking-tight">Connect Module</h2>
+                  <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest max-w-[200px] mx-auto opacity-70">
+                    Awaiting Web3 Provider Handshake
                   </p>
                 </div>
-                {isAuthenticated ? (
-                  <button className="btn btn--secondary" onClick={signOut}>Sign Out</button>
-                ) : (
-                  <button className="btn btn--primary" onClick={signIn} disabled={isSigning}>
-                    {isSigning ? "Signing…" : "Sign In"}
-                  </button>
-                )}
+                <button
+                  className="w-full bg-gradient-to-r from-primary-container to-secondary-container text-on-primary-fixed font-syne font-bold py-5 rounded-2xl uppercase tracking-wide hover:shadow-[0_0_40px_rgba(189,157,255,0.4)] active:scale-95 transition-all"
+                  onClick={connect}
+                  disabled={isConnecting}
+                >
+                  {isConnecting ? "HANDSHAKE IN PROGRESS..." : "ESTABLISH CONNECTION"}
+                </button>
+                {error && <p className="font-label text-[10px] text-error uppercase">{error}</p>}
               </div>
-            </div>
-
-            {/* ── Auth model explainer ──────────────────────────────────────── */}
-            {authModelCard}
-
-            {/* ── Admin / Owner panel ───────────────────────────────────────── */}
-            {role === "admin" && (
-              <div className="wallet-info-card" style={{ marginTop: 16, borderLeft: "3px solid var(--accent)" }}>
-                <h3 className="card-title" style={{ marginBottom: 12 }}>
-                  ⬡ Platform Admin Panel
-                </h3>
-                <p className="hint-text" style={{ marginBottom: 12 }}>
-                  You are signed in as an admin. The contract owner address is the deployer wallet
-                  that can pause the contract, slash nodes, and withdraw platform fees via MetaMask.
-                  Backend admin controls are managed here.
-                </p>
-
-                {adminLoading ? (
-                  <div className="loading-placeholder" style={{ padding: "12px 0" }}>Loading platform data…</div>
-                ) : adminData ? (
-                  <div style={{ fontSize: 13 }}>
-                    {/* Contract stats */}
-                    {"error" in adminData.contract ? (
-                      <div className="error-banner" style={{ marginBottom: 10 }}>
-                        {(adminData.contract as { error: string }).error}
-                      </div>
-                    ) : (
-                      <div className="admin-stats-grid">
-                        {[
-                          ["Contract Owner", (adminData.contract as PlatformInfo).contract_owner],
-                          ["Platform Fee", `${(adminData.contract as PlatformInfo).platform_fee_pct}%`],
-                          ["Platform Earnings", `${(adminData.contract as PlatformInfo).platform_earnings_eth} ETH`],
-                          ["Escrow Timeout", `${(adminData.contract as PlatformInfo).escrow_timeout_hours}h`],
-                          ["Min Stake", `${(adminData.contract as PlatformInfo).min_stake_eth} ETH`],
-                          ["On-chain Models", String((adminData.contract as PlatformInfo).model_count_onchain)],
-                          ["Contract Status", (adminData.contract as PlatformInfo).is_paused ? "⏸ PAUSED" : "✓ Active"],
-                        ].map(([label, value]) => (
-                          <div key={label} className="admin-stat-row">
-                            <span style={{ color: "var(--text-muted)" }}>{label}</span>
-                            <span style={{ fontWeight: 600 }}>{value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Event listener health */}
-                    <div style={{ marginTop: 14 }}>
-                      <span style={{ fontWeight: 600 }}>Event Listener: </span>
-                      <span className={`chain-badge ${
-                        adminData.listener_health.status === "ok" ? "" :
-                        adminData.listener_health.status === "error" ? "chain-badge--warn" : ""
-                      }`}>
-                        {adminData.listener_health.status}
-                      </span>
-                      {adminData.listener_health.block && (
-                        <span style={{ marginLeft: 8, color: "var(--text-muted)" }}>
-                          block {adminData.listener_health.block}
-                        </span>
-                      )}
-                      {adminData.listener_health.error && (
-                        <div className="error-banner" style={{ marginTop: 6, fontSize: 12 }}>
-                          {adminData.listener_health.error}
-                        </div>
-                      )}
+            ) : (
+              <>
+                {/* Node status row */}
+                <div className="flex justify-between items-start relative z-10">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-3">
+                      <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
+                      <span className="font-label text-[10px] font-bold text-secondary uppercase tracking-widest">NODE_ESTABLISHED</span>
                     </div>
+                    <div className="font-label text-xs text-on-surface-variant uppercase tracking-widest">{chainName}</div>
+                  </div>
+                  <button
+                    onClick={disconnect}
+                    className="font-label text-[10px] text-error uppercase tracking-widest hover:underline underline-offset-4"
+                  >
+                    Terminate
+                  </button>
+                </div>
 
-                    {/* Dead-letter queue */}
-                    {adminData.dead_letter_count > 0 && (
-                      <div style={{ marginTop: 14 }}>
-                        <span style={{ fontWeight: 600 }}>Dead-Letter Queue: </span>
-                        <span className="chain-badge chain-badge--warn">{adminData.dead_letter_count} failed events</span>
-                        <div style={{ marginTop: 8 }}>
-                          {(adminData.dead_letters_recent ?? []).map((dl, i) => (
-                            <div key={i} className="admin-stat-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
-                              <span style={{ fontWeight: 600 }}>{dl.event}</span>
-                              <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{dl.error}</span>
-                              <a
-                                href={`https://sepolia.etherscan.io/tx/${dl.tx_hash}`}
-                                target="_blank" rel="noreferrer"
-                                className="text-link" style={{ fontSize: 11 }}
-                              >
-                                {(dl.tx_hash ?? "").slice(0, 18)}… ↗
-                              </a>
-                            </div>
-                          ))}
+                {/* Vault address */}
+                <div className="space-y-2 relative z-10">
+                  <label className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest ml-1">VAULT_ADDRESS</label>
+                  <div className="bg-surface-container-high p-5 rounded-2xl border border-outline-variant/10 flex justify-between items-center group/addr">
+                    <span className="font-label text-xs font-bold truncate max-w-[180px] md:max-w-none">{address}</span>
+                    <button
+                      onClick={copy}
+                      className="font-label text-[10px] text-secondary uppercase tracking-widest shrink-0 ml-4 hover:opacity-70 transition-opacity"
+                    >
+                      {copied ? "COPIED ✓" : "COPY_HEX"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Balance */}
+                <div className="space-y-1 relative z-10">
+                  <label className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest ml-1">LIQUID_CAPITAL</label>
+                  <div className="flex items-baseline gap-4">
+                    <span className="font-label text-6xl font-bold tracking-tighter">
+                      {balance !== null ? parseFloat(balance).toFixed(4) : "0.0000"}
+                    </span>
+                    <span className="font-label text-2xl font-bold text-secondary">ETH</span>
+                  </div>
+                  {balance && (
+                    <p className="font-label text-xs text-on-surface-variant uppercase opacity-60">≈ {toUsd(balance)} USD</p>
+                  )}
+                </div>
+
+                {/* Action buttons */}
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-outline-variant/10 relative z-10">
+                  <a
+                    href={`https://sepolia.etherscan.io/address/${address}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="glass-card py-4 rounded-xl font-label text-[10px] text-center hover:border-secondary/30 uppercase tracking-widest transition-colors"
+                  >
+                    Scanner ↗
+                  </a>
+                  <button
+                    className={`py-4 rounded-xl font-label text-[10px] text-center uppercase tracking-widest transition-all ${
+                      isAuthenticated
+                        ? "bg-gradient-to-r from-secondary-container to-secondary text-on-secondary font-bold"
+                        : "glass-card hover:border-secondary/30"
+                    }`}
+                    onClick={isAuthenticated ? signOut : signIn}
+                    disabled={isSigning}
+                  >
+                    {isSigning ? "SIGNING..." : isAuthenticated ? "SESSION_ACTIVE" : "AUTHORIZE"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Trust indicators */}
+          <div className="glass-card rounded-[32px] p-8 space-y-6">
+            <div className="space-y-4">
+              {[
+                { label: "On-Chain Identity", status: !!address },
+                { label: "Backend Auth (JWT)", status: isAuthenticated },
+                { label: "Privileged Access",  status: !!role },
+              ].map((item) => (
+                <div key={item.label} className="flex justify-between items-center">
+                  <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{item.label}</span>
+                  <span className={`font-label text-[10px] uppercase tracking-widest ${item.status ? "text-secondary" : "text-on-surface-variant/30"}`}>
+                    {item.status ? "SYNCED" : "LOCKED"}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="pt-6 border-t border-dashed border-outline-variant/10 space-y-1">
+              {[
+                "Wallet proves identity (MetaMask signature).",
+                "JWT Session enables high-speed API interaction.",
+                "Escrows locked in ModelChain protocol contract.",
+              ].map((line, i) => (
+                <p key={i} className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest opacity-60 flex items-start gap-2">
+                  <span className="text-secondary font-bold shrink-0">◈</span> {line}
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── RIGHT COLUMN: ADMIN + PURCHASES ── */}
+        <div className="lg:col-span-12 xl:col-span-7 space-y-8">
+
+          {/* Admin command center */}
+          {role === "admin" && (
+            <div className="glass-card rounded-[40px] p-10 border-t-2 border-primary-container/40 space-y-10 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary-container/40 to-transparent" />
+              <div className="flex justify-between items-center">
+                <h3 className="font-syne font-bold text-2xl uppercase tracking-tight flex items-center gap-3">
+                  <span className="text-primary-container">⬡</span> Architect Command
+                </h3>
+                <span className="px-3 py-1 bg-primary-container/10 text-primary-container rounded-full font-label text-[9px] border border-primary-container/20 uppercase tracking-widest">
+                  Access Level: OWNER
+                </span>
+              </div>
+
+              {adminLoading ? (
+                <div className="space-y-4 animate-pulse">
+                  <div className="skeleton h-20 rounded-2xl" />
+                  <div className="skeleton h-20 rounded-2xl" />
+                </div>
+              ) : adminData ? (
+                <div className="space-y-10">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {[
+                      { label: "FEES",      value: `${(adminData.contract as PlatformInfo).platform_fee_pct}%` },
+                      { label: "VAULT_ETH", value: `${(adminData.contract as PlatformInfo).platform_earnings_eth}` },
+                      { label: "MODELS",    value: String((adminData.contract as PlatformInfo).model_count_onchain) },
+                      {
+                        label: "STATUS",
+                        value: (adminData.contract as PlatformInfo).is_paused ? "PAUSED" : "ACTIVE",
+                        ok: !(adminData.contract as PlatformInfo).is_paused,
+                      },
+                    ].map((stat) => (
+                      <div key={stat.label} className="glass-card rounded-2xl p-5 text-center space-y-1">
+                        <div className="font-label text-[9px] text-on-surface-variant uppercase tracking-widest">{stat.label}</div>
+                        <div className={`font-label text-lg font-bold tracking-tighter ${"ok" in stat && stat.ok === false ? "text-error" : ""}`}>
+                          {stat.value}
                         </div>
                       </div>
-                    )}
-                    {adminData.dead_letter_count === 0 && (
-                      <p style={{ marginTop: 10, color: "var(--text-muted)" }}>✓ No failed events in dead-letter queue.</p>
-                    )}
-
-                    {/* Owner actions — withdraw platform fees */}
-                    {"platform_earnings_eth" in adminData.contract && (
-                      <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
-                        <p style={{ fontWeight: 600, marginBottom: 8 }}>Owner Actions</p>
-
-                        {withdrawPlatformFees.isSuccess && (
-                          <div className="info-banner" style={{ marginBottom: 8 }}>
-                            ✓ Withdrew {withdrawPlatformFees.data?.amountEth.toFixed(6)} ETH
-                            {" — "}
-                            <a
-                              href={`https://sepolia.etherscan.io/tx/${withdrawPlatformFees.data?.txHash}`}
-                              target="_blank" rel="noreferrer" className="text-link"
-                            >
-                              View tx ↗
-                            </a>
-                          </div>
-                        )}
-                        {withdrawPlatformFees.isError && (
-                          <div className="error-banner" style={{ marginBottom: 8 }}>
-                            {(withdrawPlatformFees.error as any)?.message}
-                          </div>
-                        )}
-
-                        <button
-                          className="btn btn--primary"
-                          style={{ marginRight: 8 }}
-                          onClick={() => withdrawPlatformFees.mutate()}
-                          disabled={
-                            withdrawPlatformFees.isPending ||
-                            (adminData.contract as PlatformInfo).platform_earnings_eth === 0
-                          }
-                        >
-                          {withdrawPlatformFees.isPending
-                            ? "Withdrawing…"
-                            : `Withdraw ${(adminData.contract as PlatformInfo).platform_earnings_eth} ETH`}
-                        </button>
-
-                        <p className="hint-text" style={{ marginTop: 8 }}>
-                          Sends all accumulated platform fees to the owner wallet.
-                          Requires the connected wallet to be the contract deployer.
-                        </p>
-                      </div>
-                    )}
+                    ))}
                   </div>
-                ) : null}
+
+                  <div className="space-y-4">
+                    <h4 className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest border-b border-outline-variant/10 pb-4">
+                      Executive Actions
+                    </h4>
+                    <div className="flex flex-col md:flex-row gap-4">
+                      <button
+                        className="bg-gradient-to-r from-primary-container to-secondary-container text-on-primary-fixed font-syne font-bold px-8 py-5 rounded-2xl uppercase tracking-wide flex-1 disabled:opacity-50 hover:shadow-[0_0_30px_rgba(189,157,255,0.4)] active:scale-95 transition-all"
+                        onClick={() => withdrawPlatformFees.mutate()}
+                        disabled={withdrawPlatformFees.isPending || (adminData.contract as PlatformInfo).platform_earnings_eth === 0}
+                      >
+                        {withdrawPlatformFees.isPending
+                          ? "WITHDRAWING..."
+                          : `RECLAIM EARNINGS (${(adminData.contract as PlatformInfo).platform_earnings_eth} ETH)`}
+                      </button>
+                      <div className="flex-1 p-5 rounded-2xl border border-outline-variant/10 glass-card flex items-center justify-between">
+                        <div className="space-y-1">
+                          <span className="font-label text-[9px] text-on-surface-variant uppercase">LISTENER_HEALTH</span>
+                          <div className="font-label text-xs font-bold flex items-center gap-2 uppercase tracking-tight">
+                            <span className={`w-2 h-2 rounded-full ${adminData.listener_health.status === "ok" ? "bg-secondary animate-pulse" : "bg-error"}`} />
+                            {adminData.listener_health.status}_{adminData.listener_health.block ?? "N/A"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {/* Acquisitions / escrow list */}
+          <div className="glass-card rounded-[40px] p-10 space-y-10">
+            <div className="flex justify-between items-center">
+              <h3 className="font-syne font-bold text-2xl uppercase tracking-tight flex items-center gap-3">
+                <span className="text-secondary">◈</span> Acquisitions
+              </h3>
+              <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
+                {purchases.length} total artifacts
+              </span>
+            </div>
+
+            {purchasesLoading ? (
+              <div className="space-y-6">
+                {[1, 2, 3].map((i) => <div key={i} className="skeleton h-32 rounded-[32px]" />)}
+              </div>
+            ) : purchases.length === 0 ? (
+              <div className="py-20 text-center space-y-6 bg-secondary-container/5 rounded-[32px] border border-dashed border-secondary/10">
+                <span className="material-symbols-outlined text-5xl text-on-surface-variant block">inbox</span>
+                <p className="font-label text-xs text-on-surface-variant uppercase tracking-widest opacity-60">
+                  No active acquisitions detected
+                </p>
+                <button
+                  onClick={() => navigate("/marketplace")}
+                  className="px-8 py-3 bg-gradient-to-r from-secondary-container to-secondary text-on-secondary font-syne font-bold rounded-xl font-label text-xs uppercase tracking-wide hover:scale-105 active:scale-95 transition-all"
+                >
+                  EXPLORE NETWORK
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {purchases.map((p) => {
+                  const isConfirming = confirmingId === p.model_id;
+                  const purchaseDate = new Date(p.purchased_at);
+                  const escrowExpiry = new Date(purchaseDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+                  const isExpired    = Date.now() > escrowExpiry.getTime();
+                  const daysLeft     = Math.max(0, Math.ceil((escrowExpiry.getTime() - Date.now()) / 86_400_000));
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="glass-card rounded-[32px] p-8 hover:border-secondary/20 transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-8 group"
+                    >
+                      {/* Left info */}
+                      <div className="space-y-4 flex-1">
+                        <div className="space-y-1">
+                          <h4
+                            className="font-syne font-bold text-xl uppercase tracking-tight flex items-center gap-3 group-hover:text-secondary transition-colors cursor-pointer"
+                            onClick={() => navigate(`/model/${p.model_id}`)}
+                          >
+                            {p.model_name}
+                          </h4>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
+                            <span className="font-bold">{purchaseDate.toLocaleDateString()}</span>
+                            <span className="w-1 h-1 rounded-full bg-outline-variant" />
+                            <span className="text-on-surface">{p.price_paid_eth} ETH</span>
+                            {p.on_chain_tx && (
+                              <>
+                                <span className="w-1 h-1 rounded-full bg-outline-variant" />
+                                <a
+                                  href={`https://sepolia.etherscan.io/tx/${p.on_chain_tx}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-secondary hover:underline underline-offset-4"
+                                >
+                                  TX_SCAN ↗
+                                </a>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {p.model_description && (
+                          <p className="font-body text-xs text-on-surface-variant line-clamp-2 italic opacity-80">
+                            {p.model_description}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Right actions */}
+                      <div className="flex flex-col items-end gap-3 shrink-0 w-full md:w-auto">
+                        <div className={`w-full text-center md:w-auto px-4 py-2 rounded-full font-label text-[9px] font-bold uppercase tracking-widest border ${
+                          isExpired
+                            ? "bg-secondary-container/10 text-secondary border-secondary/20"
+                            : "bg-primary-container/10 text-primary-container border-primary-container/20"
+                        }`}>
+                          {isExpired ? "ESCROW_RELEASED" : `ESCROW_LOCK: ${daysLeft}D`}
+                        </div>
+                        {!isExpired && MARKETPLACE_ADDRESS !== "0x0000000000000000000000000000000000000000" && (
+                          <button
+                            className="w-full h-12 glass-card hover:border-secondary/30 font-label text-xs uppercase tracking-widest rounded-xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                            onClick={() => handleConfirm(p.model_id)}
+                            disabled={isConfirming || confirmDelivery.isPending}
+                          >
+                            {isConfirming ? "COORDINATING..." : "CONFIRM_RECEIPT"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
-
-            {/* ── Purchases / Escrow panel ──────────────────────────────────── */}
-            <div className="wallet-info-card" style={{ marginTop: 16 }}>
-              <h3 className="card-title" style={{ marginBottom: 16 }}>Your Purchases</h3>
-
-              {purchasesLoading ? (
-                <div className="loading-placeholder" style={{ padding: "20px 0" }}>Loading purchases…</div>
-              ) : purchases.length === 0 ? (
-                <p className="hint-text">No purchases yet. Browse the marketplace to find models.</p>
-              ) : (
-                <div className="escrow-list">
-                  {purchases.map(p => {
-                    const isConfirming = confirmingId === p.model_id;
-                    const purchaseDate = new Date(p.purchased_at);
-                    const escrowExpiry = new Date(purchaseDate.getTime() + 7 * 24 * 60 * 60 * 1000);
-                    const isExpired    = Date.now() > escrowExpiry.getTime();
-                    const daysLeft     = Math.max(0, Math.ceil((escrowExpiry.getTime() - Date.now()) / 86_400_000));
-
-                    return (
-                      <div key={p.id} className="escrow-row" style={{ flexDirection: "column", gap: 10 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                          <div className="escrow-info">
-                            <p className="escrow-model-name"
-                              style={{ cursor: "pointer", textDecoration: "underline", textDecorationColor: "var(--border)" }}
-                              onClick={() => navigate(`/model/${p.model_id}`)}
-                            >
-                              {p.model_name}
-                            </p>
-                            {p.model_description && (
-                              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 0", lineHeight: 1.4, maxWidth: 420 }}>
-                                {p.model_description.length > 100 ? p.model_description.slice(0, 100) + "…" : p.model_description}
-                              </p>
-                            )}
-                            <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-                              {p.model_category && <span className="model-category">{p.model_category}</span>}
-                              {p.model_version && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>v{p.model_version}</span>}
-                              {p.model_license && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.model_license}</span>}
-                              {p.is_simulated && <span className="chain-badge chain-badge--warn" style={{ fontSize: 10 }}>simulated</span>}
-                            </div>
-                            <p className="escrow-meta" style={{ marginTop: 6 }}>
-                              {p.price_paid_eth} ETH · {purchaseDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                            </p>
-                            {p.on_chain_tx && (
-                              <a href={`https://sepolia.etherscan.io/tx/${p.on_chain_tx}`}
-                                target="_blank" rel="noreferrer" className="tx-link" style={{ fontSize: 11 }}>
-                                View tx ↗
-                              </a>
-                            )}
-                          </div>
-
-                          <div className="escrow-actions">
-                            {isExpired ? (
-                              <span className="escrow-badge escrow-badge--released">Escrow released</span>
-                            ) : (
-                              <span className="escrow-badge escrow-badge--pending">{daysLeft}d escrow</span>
-                            )}
-
-                            {!isExpired && MARKETPLACE_ADDRESS !== "0x0000000000000000000000000000000000000000" && (
-                              <button
-                                className="btn btn--secondary"
-                                style={{ fontSize: 12, padding: "6px 12px" }}
-                                onClick={() => handleConfirm(p.model_id)}
-                                disabled={isConfirming || confirmDelivery.isPending}
-                              >
-                                {isConfirming ? "Confirming…" : "Confirm Delivery"}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {confirmDelivery.isError && (
-                <div className="error-banner" style={{ marginTop: 12 }}>
-                  {(confirmDelivery.error as any)?.message}
-                </div>
-              )}
-              {confirmDelivery.isSuccess && (
-                <div className="info-banner" style={{ marginTop: 12 }}>
-                  ✓ Delivery confirmed — funds released to creator.
-                </div>
-              )}
-            </div>
-          </>
-        )}
+          </div>
+        </div>
       </div>
     </div>
   );
