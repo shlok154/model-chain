@@ -130,6 +130,7 @@ export function useModel(id: number) {
       return DEMO_MODELS.find(m => m.id === id) ?? null;
     },
     enabled: id > 0,
+    staleTime: 5 * 60_000, // model details rarely change — cache 5 min
   });
 }
 
@@ -139,6 +140,7 @@ export function useModelReviews(modelId: number) {
     queryKey: modelKeys.reviews(modelId),
     queryFn: () => api.get<any[]>(`/api/models/${modelId}/reviews`, token).catch(() => []),
     enabled: modelId > 0,
+    staleTime: 2 * 60_000, // reviews change slowly — cache 2 min
   });
 }
 

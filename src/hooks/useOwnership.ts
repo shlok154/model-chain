@@ -36,7 +36,7 @@ export function useOwnership() {
       }
     },
     enabled: !!address && !!token,
-    staleTime: 60_000, // cache for 1 minute
+    staleTime: 5 * 60_000, // ownership rarely changes mid-session — cache 5 min
   });
 
   /** O(1) ownership check */

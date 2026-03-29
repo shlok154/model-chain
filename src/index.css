@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Mono:wght@400;500&display=swap');
 
 /* ============================================
    DESIGN TOKENS
@@ -470,6 +470,8 @@ input, textarea, select { font-family: inherit; }
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* Reserve height so grid doesn't shift as cards populate (CLS fix) */
+  min-height: 200px;
 }
 
 .model-card:hover {
