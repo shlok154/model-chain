@@ -2,7 +2,7 @@
  * Phase 5 — Frontend unit tests (Vitest)
  * Run: npm test
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 
 // ── Auth token parsing ────────────────────────────────────────────────────────
 function parseToken(token: string): { wallet: string; role: string; exp: number } | null {
@@ -147,7 +147,7 @@ describe("Pagination logic", () => {
   });
 
   it("hasNextPage is false on last page", () => {
-    const page = 4, totalPages = 5, limit = 20, total = 100;
+    const page = 4, totalPages = 5;
     expect(page >= totalPages - 1).toBe(true);
   });
 

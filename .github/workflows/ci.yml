@@ -60,7 +60,9 @@ jobs:
         with:
           node-version: 20
 
-      - run: npm ci
+      - name: Install deps
+        working-directory: modelchain-contracts
+        run: npm ci
 
       - name: Compile
         run: npm run compile
@@ -92,7 +94,7 @@ jobs:
         run: ruff check app/
 
       - name: Typecheck (mypy)
-        run: mypy app/ --ignore-missing-imports --no-strict-optional || true
+        run: mypy app/ || true
 
       - name: Tests
         run: pytest tests/ -v
