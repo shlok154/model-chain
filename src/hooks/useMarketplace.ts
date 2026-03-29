@@ -65,14 +65,16 @@ export function useMarketplace() {
         // The backend event listener records the on-chain purchase asynchronously.
         return { hash: receipt.hash, status: "confirmed", error: null };
       } catch (err: any) {
-        return {
-          hash: null,
-          status: "failed",
-          error:
-            err.code === 4001
-              ? "Transaction rejected by user."
-              : err.reason ?? err.message ?? "Transaction failed",
-        };
+        const msg = err.reason ?? err.message ?? "Transaction failed";
+        let friendlyError: string;
+        if (err.code === 4001) {
+          friendlyError = "Transaction rejected by user.";
+        } else if (msg.includes("insufficient funds")) {
+          friendlyError = "Not enough ETH in your wallet to complete this purchase.";
+        } else {
+          friendlyError = msg;
+        }
+        return { hash: null, status: "failed", error: friendlyError };
       }
     },
     [getSignedContract, address]
