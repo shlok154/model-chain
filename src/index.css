@@ -470,8 +470,9 @@ input, textarea, select { font-family: inherit; }
   display: flex;
   flex-direction: column;
   gap: 10px;
-  /* Reserve height so grid doesn't shift as cards populate (CLS fix) */
-  min-height: 200px;
+  /* CLS fix: flex column ensures card grows with content but never collapses
+     to zero height before data loads, preventing layout shift. */
+  justify-content: space-between;
 }
 
 .model-card:hover {

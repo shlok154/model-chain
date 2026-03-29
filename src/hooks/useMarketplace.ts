@@ -9,6 +9,7 @@
  * Never call fetchModels/fetchModelById from here — use useModels instead.
  */
 import { useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ethers } from "ethers";
 import { useWallet } from "../context/WalletContext";
 import { useAuth } from "../context/AuthContext";
@@ -28,6 +29,7 @@ export function isContractDeployed() {
 export function useMarketplace() {
   const { signer, provider, address } = useWallet();
   const { token } = useAuth();
+  const qc = useQueryClient();
 
   const getContract = useCallback(
     (signerOrProvider?: ethers.Signer | ethers.Provider) =>
@@ -62,7 +64,10 @@ export function useMarketplace() {
         const contract = getSignedContract();
         const tx = await contract.purchaseModel(modelId, { value: priceWei });
         const receipt = await tx.wait();
-        // The backend event listener records the on-chain purchase asynchronously.
+        // Invalidate ownership cache so UI instantly reflects the new owned state.
+        // The long 5-min staleTime + markOwned() handle the optimistic path;
+        // this ensures the server-authoritative value is refreshed too.
+        qc.invalidateQueries({ queryKey: ["ownership", address ?? ""] });
         return { hash: receipt.hash, status: "confirmed", error: null };
       } catch (err: any) {
         const msg = err.reason ?? err.message ?? "Transaction failed";
