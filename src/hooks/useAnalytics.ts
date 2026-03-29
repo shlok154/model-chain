@@ -97,9 +97,10 @@ export function useDashboardStats(address: string | null) {
 
         if (!models?.length) {
           return {
-            total_earned: 0, models_listed: 0, total_sales: 0, avg_royalty: 0,
+            total_earned: 0, models_listed: 0, total_sales: 0, unique_buyers: 0,
+            avg_royalty: 0, avg_rating: null, total_reviews: 0,
             monthly_revenue: [], top_models: [], category_breakdown: {},
-          } as DashboardStats;
+          };
         }
 
         const totalSales  = models.reduce((s, m) => s + (m.purchases ?? 0), 0);
@@ -129,7 +130,7 @@ export function useDashboardStats(address: string | null) {
           avg_rating:      null,
           total_reviews:   0,
           monthly_revenue: Object.entries(monthMap).map(([month, eth]) => ({ month, eth: parseFloat(eth.toFixed(4)) })),
-          top_models:      models.sort((a, b) => (b.purchases ?? 0) - (a.purchases ?? 0))
+          top_models:      (models ?? []).sort((a, b) => (b.purchases ?? 0) - (a.purchases ?? 0))
                              .slice(0, 5).map(m => ({
                                id: m.id, name: m.name, category: m.category,
                                price_eth: parseFloat(m.price_eth),

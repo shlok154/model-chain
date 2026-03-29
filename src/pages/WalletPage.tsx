@@ -159,7 +159,7 @@ function useWithdrawPlatformFees() {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
-  const { address, balance, chainId, isConnecting, error, connect, disconnect, provider } = useWallet();
+  const { address, balance, chainId, isConnecting, error, connect, disconnect } = useWallet();
   const { isAuthenticated, isSigning, signIn, signOut, authError, token, role } = useAuth();
   const { toUsd } = useEthPrice();
   const [copied, setCopied] = useState(false);
@@ -399,7 +399,7 @@ export default function WalletPage() {
                                 target="_blank" rel="noreferrer"
                                 className="text-link" style={{ fontSize: 11 }}
                               >
-                                {dl.tx_hash.slice(0, 18)}… ↗
+                                {(dl.tx_hash ?? "").slice(0, 18)}… ↗
                               </a>
                             </div>
                           ))}

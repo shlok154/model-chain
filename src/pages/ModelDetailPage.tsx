@@ -192,7 +192,7 @@ export default function ModelDetailPage() {
             <span className="meta-label">IPFS Hash</span>
             {/* Fix 7: no direct IPFS link — hash shown for transparency but download is gated */}
             <span className="ipfs-link" title="Download available after purchase">
-              {model.ipfsHash.slice(0, 24)}…{model.ipfsHash.slice(-8)}
+              {(model.ipfsHash ?? "").slice(0, 24)}…{(model.ipfsHash ?? "").slice(-8)}
             </span>
           </div>
 
@@ -258,7 +258,7 @@ export default function ModelDetailPage() {
                     <div className="review-header">
                       <StarRating value={r.rating} />
                       <span className="review-author">
-                        {r.reviewer?.display_name ?? `${r.user_address?.slice(0, 6)}…${r.user_address?.slice(-4)}`}
+                        {r.reviewer?.display_name ?? `${(r.user_address ?? "").slice(0, 6)}…${(r.user_address ?? "").slice(-4)}`}
                       </span>
                       <span className="review-date">
                         {new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}

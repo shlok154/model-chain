@@ -242,7 +242,7 @@ export default function UploadPage() {
               {ipfsUpload.isPending && <div className="upload-progress"><span className="upload-spinner">⟳</span> Uploading encrypted file to IPFS…</div>}
               {ipfsUpload.isSuccess && (
                 <div className="upload-success">
-                  ✓ Encrypted &amp; pinned — {form.ipfsHash.slice(0, 20)}…
+                  ✓ Encrypted &amp; pinned — {(form.ipfsHash ?? "").slice(0, 20)}…
                   <span className="field-hint" style={{ display: "block", marginTop: 4 }}>
                     🔒 File is AES-256 encrypted. Only verified purchasers can decrypt.
                   </span>
