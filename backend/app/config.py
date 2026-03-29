@@ -25,7 +25,11 @@ class Settings(BaseSettings):
     # Admin wallets — comma-separated list of wallet addresses with admin role
     # e.g. ADMIN_WALLETS=0xabc...,0xdef...
     admin_wallets: str = ""
-    allowed_origins: list[str] = ["http://localhost:5173", "https://modelchain.vercel.app"]
+    allowed_origins: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://model-chain-phi.vercel.app",
+    ]
 
     class Config:
         env_file = ".env"
