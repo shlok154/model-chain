@@ -4,8 +4,18 @@ interface AnalyticsEvent {
   event: string;
   wallet?: string | null;
   modelId?: number | null;
+  session_id: string;
   context?: Record<string, any>;
 }
+
+// ── Persistent Session Identity ────────────────────────────────────────────────
+// Helps correlate funnels (e.g. click -> sign -> purchase -> retry) across reloads.
+let _sessionId = localStorage.getItem("sessionId");
+if (!_sessionId) {
+  _sessionId = crypto.randomUUID();
+  localStorage.setItem("sessionId", _sessionId);
+}
+export const sessionId = _sessionId;
 
 /**
  * Lightweight telemetry wrapper
@@ -26,6 +36,7 @@ export function logEvent(
     event: eventName,
     wallet,
     modelId,
+    session_id: sessionId,
     context: Object.keys(context).length > 0 ? context : undefined,
   };
 

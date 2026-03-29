@@ -16,8 +16,8 @@ Improvements in v5:
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from ..config import get_settings, Settings
 from ..cache import cache_get, cache_set
@@ -32,22 +32,66 @@ def get_service_supabase(settings: Settings = Depends(get_settings)) -> Client:
 
 
 class LogEventSchema(BaseModel):
-    event: str
-    wallet: str | None = None
+    event: str = Field(..., max_length=100)
+    session_id: str = Field(..., max_length=50)
+    wallet: str | None = Field(None, max_length=42)
     modelId: int | None = None
     context: dict | None = None
 
-async def _sink_event(event_data: dict):
-    # Phase 1: Simple stdout logging. (Phase 2: write to Postgres/Sentry)
-    print(f"[TELEMETRY] {event_data['event'].upper()} | Wallet: {event_data.get('wallet')} | Model: {event_data.get('modelId')} | Context: {event_data.get('context')}")
+# Prevent DB connection exhaustion during burst log traffic
+_telemetry_semaphore = asyncio.Semaphore(50)
+
+def _insert_event_sync(supa: Client, event_data: dict, ip: str):
+    """Synchronous Supabase insertion to run in background thread"""
+    payload = {
+        "event": event_data["event"],
+        "session_id": event_data["session_id"],
+        "wallet_address": event_data.get("wallet"),
+        "model_id": event_data.get("modelId"),
+        "context": event_data.get("context", {}),
+    }
+    # Append network context natively
+    payload["context"]["client_ip"] = ip
+    supa.table("telemetry_logs").insert(payload).execute()
+
+
+async def _sink_event(supa: Client, event_data: dict, ip: str):
+    """
+    Safely sink telemetry to database. 
+    Drops events if pipeline is fully saturated protecting the application loop.
+    """
+    if _telemetry_semaphore.locked():
+        # High traffic mode: drop low-priority logs to prioritize core business logic
+        return
+
+    async with _telemetry_semaphore:
+        try:
+            # 1.5s timeout: if Supabase RPC hangs, fail gracefully without holding the semaphore forever
+            await asyncio.wait_for(asyncio.to_thread(_insert_event_sync, supa, event_data, ip), timeout=1.5)
+        except Exception as e:
+            # Telemetry is fire-and-forget; never crash backend flow.
+            print(f"[Telemetry Fault] {e}")
+
 
 @router.post("/log")
-async def log_client_event(event: LogEventSchema):
+async def log_client_event(
+    event: LogEventSchema,
+    request: Request,
+    supabase: Client = Depends(get_service_supabase),
+):
     """
-    Non-blocking telemetry endpoint. Accepts generic client events
-    and fires a background task to process/sink them safely.
+    Concurrency-controlled telemetry endpoint. Parses, truncates large
+    context payloads to protect storage size, and routes to async DB queue.
     """
-    asyncio.create_task(_sink_event(event.model_dump()))
+    event_dict = event.model_dump()
+    
+    # Restrict context payload to prevent abuse via oversized JSON parsing
+    if event_dict.get("context") and len(str(event_dict["context"])) > 2000:
+        event_dict["context"] = {"error": "payload_truncated"}
+        
+    client_ip = request.client.host if request.client else "unknown"
+
+    asyncio.create_task(_sink_event(supabase, event_dict, client_ip))
     return {"status": "accepted"}
 
 

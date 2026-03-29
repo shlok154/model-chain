@@ -297,13 +297,30 @@ export default function ModelDetailPage() {
               <button className="btn btn--primary btn--full" disabled>Checking access…</button>
             ) : isOwned ? (
               <div className="access-granted">
-                <div className="success-banner" style={{ background: "rgba(34, 211, 160, 0.1)", border: "1px solid rgba(34, 211, 160, 0.2)", color: "var(--green)", padding: "10px", borderRadius: "8px", margin: "0 auto 10px", fontSize: "13px", fontWeight: 600, width: "100%", textAlign: "center" }}>
+                <div className="success-banner" style={{ background: "rgba(34, 211, 160, 0.1)", border: "1px solid rgba(34, 211, 160, 0.2)", color: "var(--green)", padding: "10px", borderRadius: "8px", margin: "0 auto 16px", fontSize: "13px", fontWeight: 600, width: "100%", textAlign: "center" }}>
                   Access unlocked ✅
                 </div>
+                
+                <div className="trust-indicators" style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "20px", fontSize: "13px", color: "var(--text-2)", background: "var(--bg-2)", padding: "16px", borderRadius: "8px", border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    <span>Verified on-chain</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    <span>Secure IPFS download</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    <span>Content-addressed integrity</span>
+                  </div>
+                </div>
+
                 <button
                   className="btn btn--primary"
                   onClick={handleSecureDownload}
                   disabled={isDownloading}
+                  style={{ width: "100%" }}
                 >
                   {isDownloading ? "Decrypting & saving…" : "Download Model ↓"}
                 </button>

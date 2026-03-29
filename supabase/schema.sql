@@ -344,3 +344,22 @@ alter table public.model_encryption_keys enable row level security;
 -- If you ever remove FastAPI as the gateway (e.g. direct Supabase client writes),
 -- you MUST tighten these policies to use JWT claim checks. The current setup
 -- is intentionally permissive at the DB layer because FastAPI is the gate.
+
+-- ============================================================================
+-- 10. TELEMETRY LOGS
+-- ============================================================================
+
+create table if not exists public.telemetry_logs (
+  id uuid default gen_random_uuid() primary key,
+  event text not null,
+  wallet_address text,
+  model_id integer,
+  session_id text,
+  context jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- Indexes for lightning fast analytics querying by core dimensions
+create index if not exists idx_telemetry_event on public.telemetry_logs(event);
+create index if not exists idx_telemetry_session on public.telemetry_logs(session_id);
+create index if not exists idx_telemetry_created_at on public.telemetry_logs(created_at desc);

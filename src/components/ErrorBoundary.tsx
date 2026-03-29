@@ -25,7 +25,7 @@ export class ErrorBoundary extends Component<Props, State> {
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
     // Log the crash so we know about it asynchronously
-    logEvent("frontend_crash", { error_message: error.message, error_stack: error.stack });
+    logEvent("error_event_logged", { error_message: error.message, error_stack: error.stack });
   }
 
   public render() {

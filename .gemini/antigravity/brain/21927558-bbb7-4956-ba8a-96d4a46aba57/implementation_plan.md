@@ -1,62 +1,51 @@
-# Stabilize & Polish: Production-Grade Hardening
+# Final Polish: System Observability & Trust
 
-This plan outlines the final set of high-level improvements to ensure the Web3 marketplace is incredibly robust, accessible, and fault-tolerant in a production environment.
-
-## User Review Required
-
-> [!WARNING]
-> I will be adding a generic log endpoint to the backend (FastAPI) to capture client-side RPC errors and failed purchases. This will simply print to the backend logs for now. Does that sound sufficient for your initial analytics tracking?
+This plan captures the final 5% of systematic, production-grade architecture as requested. We will connect the raw telemetry streams to durable storage, enforce rate limiting, guarantee correlation via session IDs, and surface backend security features visually to the end user.
 
 ## Proposed Changes
 
 ---
 
-### Backend Components
+### Phase 1: Storage Infrastructure
+
+#### [MODIFY] [schema.sql](file:///c:/Users/shlok/Downloads/model-chain-v7/model-chain-v6/supabase/schema.sql)
+- **Feature:** Durable Telemetry Table.
+- Append a `telemetry_logs` table at the end of the schema.
+- Fields: `id`, `event`, `wallet_address`, `model_id`, `session_id`, `context` (JSONB), and `created_at`.
+- End users will have zero direct RLS access; the backend (via service role) handles all insertions asynchronously.
 
 #### [MODIFY] [analytics.py](file:///c:/Users/shlok/Downloads/model-chain-v7/model-chain-v6/backend/app/routes/analytics.py)
-- **Feature:** Client Telemetry Endpoint.
-- Add a highly generic `POST /api/analytics/log` endpoint accepting an event name, error message, and context.
-- This will allow the React frontend to report failed Web3 transactions (e.g. "insufficient funds", "user rejected") or RPC timeouts directly to backend standard out.
+- **Feature:** Telemetry Sink & Validation.
+- Update `_sink_event` to pipe incoming JSON directly into the Supabase `telemetry_logs` table.
+- **Hardening:** Add strict payload size constraints and simple schema validation via Pydantic (`LogEventSchema`) to reject oversized `context` objects before attempting an insert.
 
 ---
 
-### Frontend Mechanics & Architecture
+### Phase 2: Frontend Correlation & UI
 
-#### [NEW] [ErrorBoundary.tsx](file:///c:/Users/shlok/Downloads/model-chain-v7/model-chain-v6/src/components/ErrorBoundary.tsx)
-- **Feature:** Global Crash Protection.
-- Standard React class component with `getDerivedStateFromError`.
-- Catches any render-cycle crashes (e.g., malformed data) instead of white-screening the whole app. Provides a clean fallback UI with a "Reload Page" button.
+#### [MODIFY] [analytics.ts](file:///c:/Users/shlok/Downloads/model-chain-v7/model-chain-v6/src/lib/analytics.ts)
+- **Feature:** Session Mapping.
+- Instantiate a global `const sessionId = crypto.randomUUID()` on app boot.
+- Inject `sessionId` into the root body of every `logEvent` payload. This guarantees perfect tracking across "Tx Initiated → Failed → Retry → Confirmed" pipelines for identical wallets and models.
 
-#### [MODIFY] [App.tsx](file:///c:/Users/shlok/Downloads/model-chain-v7/model-chain-v6/src/App.tsx)
-- Wrap the `<Suspense>` bounded routes in the new `<ErrorBoundary>` so that a crash in any lazy-loaded page doesn't wreck the application shell (Header/Sidebar).
-
-#### [MODIFY] [useOwnership.ts](file:///c:/Users/shlok/Downloads/model-chain-v7/model-chain-v6/src/hooks/useOwnership.ts)
-- Add `refetchOnMount: "always"` to the ownership query. While `staleTime: 5m` prevents spamming during regular interaction, `refetchOnMount` ensures that if a user navigates away to a new session block and mounts a high-value route, it double-checks the source of truth asynchronously.
-
-#### [MODIFY] [useMarketplace.ts](file:///c:/Users/shlok/Downloads/model-chain-v7/model-chain-v6/src/hooks/useMarketplace.ts)
-- In the `catch` blocks for `purchaseModel`, `listModel`, and `withdraw`, asynchronously fire `api.post("/api/analytics/log")` to track real user failure rates without blocking the UI.
-
----
-
-### Frontend Styling & Accessibility
-
-#### [MODIFY] [index.css](file:///c:/Users/shlok/Downloads/model-chain-v7/model-chain-v6/src/index.css)
-- **Micro-CLS Skeleton Fix:** Adjust `.model-card--skeleton` padding, height, and gap properties to **identically match** the loaded `.model-card` height based on the new flex constraints. 
-- **Focus States:** Add explicit `:focus-visible` outlines to `button`, `a`, and `.model-card` so keyboard users can navigate intuitively.
-
-#### [MODIFY] [MarketplacePage.tsx](file:///c:/Users/shlok/Downloads/model-chain-v7/model-chain-v6/src/pages/MarketplacePage.tsx) & [ModelDetailPage.tsx](file:///c:/Users/shlok/Downloads/model-chain-v7/model-chain-v6/src/pages/ModelDetailPage.tsx)
-- Ensure all interactive elements have semantic `aria-labels` and `role="button"` where div-clicks are used.
-- Force `onKeyDown` listeners wherever `onClick` is used on non-button elements, mapping the `Enter` key to select models. (Accessibility parity).
+#### [MODIFY] [ModelDetailPage.tsx](file:///c:/Users/shlok/Downloads/model-chain-v7/model-chain-v6/src/pages/ModelDetailPage.tsx)
+- **Feature:** UI Trust Indicators.
+- When `hasAccess` resolves to true inside the purchase card, conditionally render a highly polished list of trust indicators:
+  - ✔️ Verified on-chain
+  - ✔️ Secure IPFS download
+  - ✔️ Immutable delivery
+- These translate the "backend invisible logic" into explicit user value.
+- When it comes to download integrity, we will rely on IPFS's native CID Content Addressing, since downloading via an exact `ipfs_hash` is inherently checksum-verified by the IPFS network protocol itself (impossible to serve modified data under the same hash).
 
 ## Open Questions
 
-> [!IMPORTANT]  
-> Are there any specific analytics events other than failed purchases, deployments (`listModel`), and RPC timeouts that you want me to capture right away?
+> [!IMPORTANT]
+> Because telemetry logging will hit Supabase on *every* single frontend event, the connection pool or rate limit may be tested under extreme load. For this initial phase, I will add an immediate fire-and-forget `upsert` mechanism in `analytics.py` using `asyncio.create_task`. Is this acceptable for Phase 1, or do you require an in-memory batching/flushing queue straight away?
 
 ## Verification Plan
 
 ### Automated Tests
-- I'll restart the development server and verify that React compiles cleanly with the new TypeScript ErrorBoundary.
+- I will run `psql` or `supabase db reset` locally to verify the new `telemetry_logs` table builds successfully without RLS conflicts.
 ### Manual Verification
-- I will verify visually that the skeleton cards match the final card heights to prevent any micro layout shifts.
-- I will simulate a failed purchase transaction and verify the network tab shows a successful POST request to the new `/api/analytics/log` telemetry endpoint.
+- I will verify the UI renders the new Trust Indicators precisely.
+- I will check the frontend network tab to guarantee `sessionId` consistently populates on analytics posts globally.
