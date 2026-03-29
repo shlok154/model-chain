@@ -3,7 +3,6 @@ Backend tests — Auth endpoints
 Run: cd backend && pytest tests/ -v
 """
 import pytest
-import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import AsyncMock, patch
 from app.main import app

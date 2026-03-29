@@ -126,7 +126,7 @@ async def verify_signature(
     if not stored_nonce:
         raise HTTPException(status_code=400, detail="Nonce expired or not found. Request a new one.")
 
-    nonce = stored_nonce.decode() if isinstance(stored_nonce, bytes) else stored_nonce
+
     if not stored_message:
         raise HTTPException(status_code=400, detail="Nonce session expired. Request a new nonce.")
     message = stored_message.decode() if isinstance(stored_message, bytes) else stored_message

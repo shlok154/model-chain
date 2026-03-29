@@ -1,7 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
-from unittest.mock import patch, MagicMock
 
 # Global Auth Override for tests
 def auth_override():

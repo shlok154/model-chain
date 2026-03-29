@@ -14,7 +14,7 @@ def get_jwt(acct):
             print(f"  Error getting nonce: {res.status_code} - {res.text}")
             return None
         data = res.json()
-        nonce = data["nonce"]
+        _nonce = data["nonce"]
         msg = data["message"]
 
         signed = acct.sign_message(encode_defunct(text=msg))
@@ -121,7 +121,7 @@ def main():
     try:
         with client1.stream("GET", f"/api/ipfs/download/{ipfs_hash}") as stream_res:
             if stream_res.status_code == 200:
-                print(f"  [PASS] Stream opened (200)")
+                print("  [PASS] Stream opened (200)")
                 passed += 1
             else:
                 body = stream_res.read().decode(errors="replace")

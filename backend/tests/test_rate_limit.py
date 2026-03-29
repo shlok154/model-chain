@@ -14,6 +14,7 @@ async def test_rate_limit_exceeded_returns_429():
         nonlocal call_count
 
         async def incr(key):
+            nonlocal call_count
             call_count += 1
             return 999   # simulate many requests
 

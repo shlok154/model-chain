@@ -32,6 +32,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid as _uuid
 import redis.asyncio as aioredis
 from web3 import AsyncWeb3
 from web3.middleware import ExtraDataToPOAMiddleware
@@ -168,7 +169,7 @@ async def _dead_letter(redis: aioredis.Redis, event_name: str, event: dict, erro
 
 # ── Distributed lock ──────────────────────────────────────────────────────────
 
-import uuid as _uuid
+
 _INSTANCE_ID = _uuid.uuid4().hex   # unique ID per process
 
 

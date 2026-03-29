@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from ..config import get_settings, Settings
 from ..cache import cache_get, cache_set, cache_invalidate_prefix
-from ..deps import get_current_wallet, require_creator_or_admin
+from ..deps import get_current_wallet
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 

@@ -3,8 +3,7 @@ Phase 3 — Redis Cache helpers
 Simple decorator + manual helpers for caching API responses.
 """
 import json
-import functools
-from typing import Any, Callable
+from typing import Any
 from .redis_client import get_redis
 
 DEFAULT_TTL = 30   # seconds

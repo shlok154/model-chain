@@ -1,6 +1,5 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
-import secrets
 
 class Settings(BaseSettings):
     # JWT
@@ -46,7 +45,7 @@ class Settings(BaseSettings):
         if self.jwt_secret in ("change-me-in-production", "", "secret", "password"):
             errors.append(
                 "JWT_SECRET is set to the default placeholder value. "
-                f"Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
             )
         if len(self.jwt_secret) < 32:
             errors.append(

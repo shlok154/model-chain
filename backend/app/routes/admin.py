@@ -10,7 +10,7 @@ All routes require admin role (JWT claim role=admin).
 """
 import json
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from web3 import AsyncWeb3
 from web3.middleware import ExtraDataToPOAMiddleware
 from ..config import get_settings, Settings
