@@ -8,11 +8,11 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 1440  # 24h
 
     # Supabase
-    supabase_url: str
-    supabase_service_role_key: str     # privileged operations only — backend trusted authority
+    supabase_url: str = "http://localhost"
+    supabase_service_role_key: str = "test-key"     # privileged operations only — backend trusted authority
 
     # Blockchain
-    alchemy_sepolia_url: str
+    alchemy_sepolia_url: str = "http://localhost"
     marketplace_address: str = "0x3131f5ea556cbeBe3A09F3AB42EDb8F3C630240D"
 
     # Redis

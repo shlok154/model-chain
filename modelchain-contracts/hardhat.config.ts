@@ -10,7 +10,7 @@ const config: HardhatUserConfig = {
   networks: {
     sepolia: {
       type: "http",
-      url: process.env.ALCHEMY_SEPOLIA_URL || "",
+      url: process.env.ALCHEMY_SEPOLIA_URL || "http://127.0.0.1:8545",
       accounts: process.env.PRIVATE_KEY
         ? [`0x${process.env.PRIVATE_KEY}`]
         : [],
