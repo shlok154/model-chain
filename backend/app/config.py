@@ -1,18 +1,10 @@
-from pydantic import field_validator
-from pydantic_settings import BaseSettings
+import os
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 class Settings(BaseSettings):
     # JWT
-    jwt_secret: str = "test-secret-key-minimum-32-characters-long"
-
-    @field_validator("jwt_secret")
-    @classmethod
-    def validate_jwt(cls, v: str) -> str:
-        """Guarantee 32 chars even if env overrides with 'test-secret'"""
-        if len(v) < 32:
-            return "test-secret-key-minimum-32-characters-long"
-        return v
+    jwt_secret: str = os.getenv("JWT_SECRET", "test-secret-key-minimum-32-characters-long-hardcoded-default")
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # 24h
 
@@ -39,8 +31,7 @@ class Settings(BaseSettings):
         "https://model-chain-phi.vercel.app",
     ]
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     def validate_security(self) -> None:
         """

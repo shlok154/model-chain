@@ -124,27 +124,35 @@ async def verify_signature(
         stored_message = _local_fallback_cache.pop(_message_key(wallet), None)
 
     if not stored_nonce:
-        raise HTTPException(status_code=400, detail="Nonce expired or not found. Request a new one.")
-
+        raise HTTPException(status_code=401, detail=f"Nonce expired or not found for wallet {wallet}")
 
     if not stored_message:
-        raise HTTPException(status_code=400, detail="Nonce session expired. Request a new nonce.")
-    message = stored_message.decode() if isinstance(stored_message, bytes) else stored_message
+        raise HTTPException(status_code=401, detail=f"Nonce session (message) expired for wallet {wallet}")
+    
+    # Normalise message and line endings as per User Safeguard
+    message = stored_message.decode() if isinstance(stored_message, bytes) else str(stored_message)
+    message = message.replace("\r\n", "\n")
 
     # 3. Recover the signer address from the signature
     try:
         signable = encode_defunct(text=message)
-        recovered = Account.recover_message(signable, signature=body.signature)
+        # Normalise signature for eth-account stability
+        sig = body.signature
+        if isinstance(sig, str):
+            sig = sig.strip()
+            if sig.startswith("0x"):
+                sig = sig[2:]
+            sig = bytes.fromhex(sig)
+            
+        recovered = Account.recover_message(signable, signature=sig)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Signature recovery failed: {e}")
+        raise HTTPException(status_code=401, detail=f"Signature recovery failed: {e}")
 
-    if recovered.lower() != wallet:
+    # Ensure recovered address matches wallet (lowercase comparison)
+    if recovered.lower() != wallet.lower().strip():
         raise HTTPException(status_code=401, detail="Signature does not match wallet address.")
 
     # 5. Determine role: check Supabase for existing user record.
-    #    - Admins listed in ADMIN_WALLETS env var get role "admin"
-    #    - Wallets that have previously listed a model get role "creator"
-    #    - Everyone else starts as "user" and is upserted into users table
     role = "user"
     try:
         supa = create_client(settings.supabase_url, settings.supabase_service_role_key)
@@ -159,13 +167,17 @@ async def verify_signature(
             ).limit(1).execute()
             if models_res.data:
                 role = "creator"
-        # Upsert user record (ensures row exists for FK joins)
-        supa.table("users").upsert(
+        res = supa.table("users").upsert(
             {"wallet_address": wallet, "role": role},
             on_conflict="wallet_address",
         ).execute()
-    except Exception:
+        if not res.data:
+            raise HTTPException(status_code=500, detail="Failed to upsert user record")
+    except HTTPException:
+        raise
+    except Exception as e:
         # Non-fatal: role stays "user" if DB is unreachable at auth time
+        print(f"Auth DB error: {e}")
         pass
 
     # 6. Issue JWT
@@ -185,6 +197,8 @@ async def refresh_token(
 ):
     """Re-issue a fresh token if the existing one is still valid."""
     payload = decode_jwt(credentials.credentials, settings)
+    if not payload or "wallet" not in payload:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
     wallet = payload["wallet"]
     role = payload.get("role", "user")
     new_token = _make_jwt(wallet, role, settings)

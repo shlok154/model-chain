@@ -77,13 +77,20 @@ async def upload_to_ipfs(
 
     safe_filename = re.sub(r"[^\w.\-]", "_", file.filename or "model")
 
-    async with httpx.AsyncClient(timeout=300) as client:
-        response = await client.post(
-            "https://api.pinata.cloud/pinning/pinFileToIPFS",
-            headers={"Authorization": f"Bearer {settings.pinata_jwt}"},
-            files={"file": (safe_filename, file.file, file.content_type)},
-            data={"pinataMetadata": f'{{"name":"{safe_filename}","keyvalues":{{"uploader":"{wallet}"}}}}'},
-        )
+    try:
+        async with httpx.AsyncClient(timeout=300) as client:
+            response = await client.post(
+                "https://api.pinata.cloud/pinning/pinFileToIPFS",
+                headers={"Authorization": f"Bearer {settings.pinata_jwt}"},
+                files={"file": (safe_filename, file.file, file.content_type)},
+                data={"pinataMetadata": f'{{"name":"{safe_filename}","keyvalues":{{"uploader":"{wallet}"}}}}'},
+            )
+    except Exception as e:
+        import sys
+        import traceback
+        print(f"DEBUG IPFS UPLOAD FAIL: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        raise HTTPException(status_code=503, detail=f"IPFS service unavailable: {e}")
 
     if response.status_code != 200:
         raise HTTPException(status_code=502, detail=f"Pinata error: {response.text}")
@@ -128,8 +135,8 @@ async def download_from_ipfs(
     model_res = supa.table("models").select("id, creator_address, name, price_eth").eq(
         "ipfs_hash", ipfs_hash
     ).limit(1).execute()
-    if not model_res.data:
-        raise HTTPException(status_code=404, detail="Model not found.")
+    if not model_res or not model_res.data:
+        raise HTTPException(status_code=404, detail="Model not found in database.")
 
     model_id     = model_res.data[0]["id"]
     creator_addr = model_res.data[0]["creator_address"]
@@ -142,7 +149,10 @@ async def download_from_ipfs(
             "model_id", model_id
         ).eq("buyer_address", wallet).limit(1).execute()
         
-        has_access = bool(purchase_res.data)
+        if not purchase_res or purchase_res.data is None:
+             raise HTTPException(status_code=403, detail="Purchase verification failed (no record found).")
+        
+        has_access = len(purchase_res.data) > 0
         
         if has_access:
             await emit_telemetry("ownership_check_db_hit", wallet=wallet, modelId=model_id, source="db")
@@ -351,9 +361,8 @@ async def get_decryption_key(
         "ipfs_hash", ipfs_hash
     ).maybe_single().execute()
 
-    if not key_res.data:
-        # File may not be encrypted — return indicator so client skips decryption
-        return {"encrypted": False, "key_b64": None}
+    if not key_res or not key_res.data:
+        raise HTTPException(status_code=404, detail="Encryption key not found for this CID.")
 
     return {
         "encrypted": key_res.data["encrypted"],

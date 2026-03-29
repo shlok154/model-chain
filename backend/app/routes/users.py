@@ -34,9 +34,10 @@ async def get_own_profile(
 ):
     """Return the authenticated user's own profile row, creating it if absent."""
     supa = _supa(settings)
-    res = supa.table("users").select("*").eq("wallet_address", wallet).maybeSingle().execute()
-    if res.data:
-        return res.data
+    res = supa.table("users").select("*").eq("wallet_address", wallet).maybe_single().execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="User profile not found")
+    return res.data
 
     # Row absent — upsert a blank profile (wallet just connected for the first time)
     upsert = supa.table("users").upsert(

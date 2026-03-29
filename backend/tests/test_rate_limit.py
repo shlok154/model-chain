@@ -5,26 +5,18 @@ from unittest.mock import AsyncMock, patch
 from app.main import app
 
 @pytest.mark.anyio
-async def test_rate_limit_exceeded_returns_429():
+async def test_rate_limit_exceeded_returns_429(client):
     """Exceeding the nonce rate limit should return 429."""
-    call_count = 0
+    redis_mock = AsyncMock()
+    # Simulate a high count to trigger rate limit (count > 10 for /auth/nonce)
+    redis_mock.incr = AsyncMock(return_value=11)
+    redis_mock.expire = AsyncMock()
+    redis_mock.ttl = AsyncMock(return_value=45)
+    
+    # Middleware does not use Depends(), so we MUST patch the module-level import
+    with patch("app.middleware.get_redis", new=AsyncMock(return_value=redis_mock)):
+        resp = client.get("/auth/nonce?wallet=0xd8da6bf26964af9d7eed9e03e53415d37aa96045")
+        assert resp.status_code == 429
+        assert "Retry-After" in resp.headers
 
-    async def fake_get_redis():
-        redis = AsyncMock()
-        nonlocal call_count
 
-        async def incr(key):
-            nonlocal call_count
-            call_count += 1
-            return 999   # simulate many requests
-
-        redis.incr = incr
-        redis.expire = AsyncMock()
-        redis.ttl = AsyncMock(return_value=45)
-        return redis
-
-    with patch("app.middleware.get_redis", fake_get_redis):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.get("/auth/nonce?wallet=0xabc")
-            assert resp.status_code == 429
-            assert "Retry-After" in resp.headers
