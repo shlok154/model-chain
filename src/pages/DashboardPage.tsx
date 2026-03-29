@@ -221,7 +221,7 @@ export default function DashboardPage() {
                 <SkeletonCard height={160} />
               ) : (
                 <div className="top-models-list">
-                  {stats!.top_models.map((m, i) => (
+                  {(stats?.top_models ?? []).map((m, i) => (
                     <div
                       key={m.id}
                       className="top-model-row top-model-row--clickable"
@@ -263,7 +263,7 @@ export default function DashboardPage() {
                   <SkeletonCard height={80} />
                 ) : (
                   <div className="category-breakdown">
-                    {Object.entries(stats!.category_breakdown).map(([cat, count]) => (
+                    {Object.entries(stats?.category_breakdown ?? {}).map(([cat, count]) => (
                       <div key={cat} className="category-row">
                         <span className="model-category">{cat}</span>
                         <span className="category-count">{count as number} model{(count as number) !== 1 ? "s" : ""}</span>
