@@ -62,17 +62,19 @@ export function useModels(params: ModelListParams = {}) {
       // Try backend API first (has search + caching)
       try {
         const qs = new URLSearchParams({
-          page: String(page), limit: String(creator ? 200 : limit),
+          page: String(page), limit: String(limit),
           ...(category  && { category }),
           ...(search    && { search }),
-          ...(creator   && { creator }),
           ...(min_price != null && { min_price: String(min_price) }),
           ...(max_price != null && { max_price: String(max_price) }),
         });
         const result = await api.get<{ data: any[]; total: number }>(`/api/models?${qs}`, token);
-        console.log("API RESULT:", result);
-        const rows = Array.isArray(result?.data) ? result.data : [];
-        return { models: rows.map(rowToModel), total: result?.total ?? rows.length };
+        let rows = Array.isArray(result?.data) ? result.data : [];
+        // Client-side creator filter (avoids 422 if backend rejects the param)
+        if (creator) {
+          rows = rows.filter((r: any) => (r.creator_address ?? "").toLowerCase() === creator.toLowerCase());
+        }
+        return { models: rows.map(rowToModel), total: creator ? rows.length : (result?.total ?? rows.length) };
       } catch { /* backend unavailable */ }
 
       // Supabase fallback
