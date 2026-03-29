@@ -20,6 +20,8 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from supabase import create_client
+from web3 import AsyncWeb3
+from web3.middleware import ExtraDataToPOAMiddleware
 from ..config import get_settings, Settings
 from ..deps import get_current_wallet, require_creator_or_admin
 
@@ -127,7 +129,39 @@ async def download_from_ipfs(
         purchase_res = supa.table("purchases").select("id").eq(
             "model_id", model_id
         ).eq("buyer_address", wallet).limit(1).execute()
-        if not purchase_res.data:
+        
+        has_access = bool(purchase_res.data)
+
+        # Fallback to on-chain verification if DB is out of sync or missing the purchase
+        if not has_access and settings.marketplace_address and settings.marketplace_address != "0x0000000000000000000000000000000000000000":
+            try:
+                w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(settings.alchemy_sepolia_url))
+                w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+                
+                ACCESS_ABI = [{
+                    "inputs": [
+                        {"internalType": "uint256", "name": "modelId", "type": "uint256"},
+                        {"internalType": "address", "name": "user", "type": "address"}
+                    ],
+                    "name": "hasAccess",
+                    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+                    "stateMutability": "view",
+                    "type": "function",
+                }]
+                
+                contract = w3.eth.contract(
+                    address=AsyncWeb3.to_checksum_address(settings.marketplace_address),
+                    abi=ACCESS_ABI
+                )
+                
+                has_access = await contract.functions.hasAccess(
+                    model_id, 
+                    AsyncWeb3.to_checksum_address(wallet)
+                ).call()
+            except Exception as e:
+                print(f"[IPFS Download] On-chain access check failed for {wallet}: {e}")
+
+        if not has_access:
             raise HTTPException(
                 status_code=403,
                 detail="Purchase required to download this model.",
