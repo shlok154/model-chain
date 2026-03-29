@@ -83,10 +83,14 @@ async def list_models(
     query = (supabase.table("models")
         .select("*, creator:users!creator_address(display_name, is_verified)", count="exact"))
 
-    if category:      query = query.eq("category", category)
-    if clean_creator: query = query.eq("creator_address", clean_creator)
-    if min_price is not None: query = query.gte("price_eth", min_price)
-    if max_price is not None: query = query.lte("price_eth", max_price)
+    if category:
+        query = query.eq("category", category)
+    if clean_creator:
+        query = query.eq("creator_address", clean_creator)
+    if min_price is not None:
+        query = query.gte("price_eth", min_price)
+    if max_price is not None:
+        query = query.lte("price_eth", max_price)
     if clean_search:
         query = query.or_(f"name.ilike.%{clean_search}%,description.ilike.%{clean_search}%")
 

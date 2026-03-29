@@ -88,7 +88,7 @@ export function useMarketplace() {
         return { hash: null, status: "failed", error: friendlyError };
       }
     },
-    [getSignedContract, address]
+    [getSignedContract, address, qc, token]
   );
 
   // ── List model ──────────────────────────────────────────────────────────────
@@ -150,7 +150,7 @@ export function useMarketplace() {
         };
       }
     },
-    [getSignedContract, address]
+    [getSignedContract, address, qc, token]
   );
 
   // ── Withdraw ────────────────────────────────────────────────────────────────
