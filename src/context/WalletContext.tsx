@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { ethers } from "ethers";
+import { logEvent } from "../lib/analytics";
 import type { WalletState } from "../types";
 
 interface WalletContextValue extends WalletState {
@@ -76,6 +77,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const connect = useCallback(async () => {
     const eth = getEthereum();
+    logEvent("wallet_connect_clicked");
     if (!eth) {
       setState((s) => ({
         ...s,
@@ -87,6 +89,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     try {
       await eth.request({ method: "eth_requestAccounts" });
       await loadWalletData(eth);
+      logEvent("wallet_connect_success");
     } catch (err: any) {
       setState((s) => ({
         ...s,
@@ -96,6 +99,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             ? "Connection rejected by user."
             : err.message ?? "Failed to connect wallet.",
       }));
+      logEvent("wallet_connect_failed", { errorCode: err.code, errorMessage: err.message });
     }
   }, [loadWalletData]);
 

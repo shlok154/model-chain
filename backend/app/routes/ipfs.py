@@ -15,7 +15,9 @@ v5 improvements:
   publicly accessible on the raw IPFS network.
 """
 import re
+import time
 import httpx
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -26,6 +28,13 @@ from ..config import get_settings, Settings
 from ..deps import get_current_wallet, require_creator_or_admin
 
 router = APIRouter(prefix="/api/ipfs", tags=["ipfs"])
+
+async def emit_telemetry(event: str, **kwargs):
+    """Fire-and-forget telemetry sink from backend components"""
+    def log():
+        import json
+        print(f"[TELEMETRY] {event.upper()} | {json.dumps(kwargs)}")
+    asyncio.create_task(asyncio.to_thread(log))
 
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB
 _CID_RE = re.compile(r"^Qm[1-9A-HJ-NP-Za-km-z]{44}$|^bafy[a-z2-7]{55}$")
@@ -112,6 +121,8 @@ async def download_from_ipfs(
     if not _valid_cid(ipfs_hash):
         raise HTTPException(status_code=400, detail="Invalid IPFS hash format.")
 
+    await emit_telemetry("download_requested", ipfs_cid=ipfs_hash, wallet=wallet)
+
     supa = create_client(settings.supabase_url, settings.supabase_service_role_key)
 
     model_res = supa.table("models").select("id, creator_address, name, price_eth").eq(
@@ -132,10 +143,17 @@ async def download_from_ipfs(
         ).eq("buyer_address", wallet).limit(1).execute()
         
         has_access = bool(purchase_res.data)
+        
+        if has_access:
+            await emit_telemetry("ownership_check_db_hit", wallet=wallet, modelId=model_id, source="db")
+        else:
+            await emit_telemetry("ownership_check_db_miss", wallet=wallet, modelId=model_id)
 
         # Fallback to on-chain verification if DB is out of sync or missing the purchase
         if not has_access and settings.marketplace_address and settings.marketplace_address != "0x0000000000000000000000000000000000000000":
+            t0 = time.time()
             try:
+                await emit_telemetry("rpc_call", method="hasAccess", provider="alchemy")
                 w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(settings.alchemy_sepolia_url))
                 w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
                 
@@ -159,10 +177,11 @@ async def download_from_ipfs(
                     model_id, 
                     AsyncWeb3.to_checksum_address(wallet)
                 ).call()
+                latency_ms = int((time.time() - t0) * 1000)
                 
-                # Self-healing cache: if the contract says they own it, but our DB missed it
-                # (e.g. event listener lag), backfill the purchase record so next time it's fast.
                 if has_access:
+                    await emit_telemetry("ownership_check_chain_hit", wallet=wallet, modelId=model_id, source="chain", latency_ms=latency_ms)
+                    await emit_telemetry("self_heal_triggered", wallet=wallet, modelId=model_id, reason="db_miss", latency_ms=latency_ms)
                     try:
                         print(f"[IPFS] Fallback success: {wallet} -> model {model_id}")
                         supa.table("purchases").upsert({
@@ -172,11 +191,16 @@ async def download_from_ipfs(
                             "on_chain_tx": None,
                             "verification_source": "chain_fallback"
                         }, on_conflict="model_id,buyer_address").execute()
+                        await emit_telemetry("self_heal_success", wallet=wallet, modelId=model_id)
                     except Exception as ins_err:
                         # Log but don't fail the download if caching fails
+                        await emit_telemetry("self_heal_failed", wallet=wallet, modelId=model_id, error=str(ins_err))
                         print(f"[IPFS Download] Failed to cache fallback purchase: {ins_err}")
 
             except Exception as e:
+                latency_ms = int((time.time() - t0) * 1000)
+                await emit_telemetry("rpc_error", method="hasAccess", provider="alchemy", status="error", latency_ms=latency_ms, error=str(e))
+                await emit_telemetry("ownership_check_rpc_fail", wallet=wallet, modelId=model_id, latency_ms=latency_ms)
                 print(f"[IPFS Download] On-chain access check failed for {wallet}: {e}")
                 raise HTTPException(
                     status_code=503,
@@ -184,10 +208,14 @@ async def download_from_ipfs(
                 )
 
         if not has_access:
+            await emit_telemetry("access_denied", wallet=wallet, modelId=model_id)
             raise HTTPException(
                 status_code=403,
                 detail="Purchase required to download this model.",
             )
+
+    await emit_telemetry("access_granted", wallet=wallet, modelId=model_id)
+    await emit_telemetry("download_authorized", wallet=wallet, modelId=model_id)
 
     try:
         supa.table("downloads").upsert({
@@ -205,13 +233,26 @@ async def download_from_ipfs(
     gateway_url = f"https://gateway.pinata.cloud/ipfs/{ipfs_hash}"
 
     async def _stream_body():
-        async with httpx.AsyncClient() as stream_client:
-            async with stream_client.stream("GET", gateway_url, follow_redirects=True, timeout=600) as upstream:
-                if upstream.status_code != 200:
-                    yield b""
-                    return
-                async for chunk in upstream.aiter_bytes(chunk_size=64 * 1024):
-                    yield chunk
+        bytes_sent = 0
+        t0 = time.time()
+        await emit_telemetry("download_stream_started", wallet=wallet, modelId=model_id, ipfs_cid=ipfs_hash)
+        try:
+            async with httpx.AsyncClient() as stream_client:
+                async with stream_client.stream("GET", gateway_url, follow_redirects=True, timeout=600) as upstream:
+                    if upstream.status_code != 200:
+                        await emit_telemetry("download_stream_failed", wallet=wallet, modelId=model_id, ipfs_cid=ipfs_hash, error=f"upstream_status_{upstream.status_code}")
+                        yield b""
+                        return
+                    async for chunk in upstream.aiter_bytes(chunk_size=64 * 1024):
+                        bytes_sent += len(chunk)
+                        yield chunk
+            
+            duration_ms = int((time.time() - t0) * 1000)
+            await emit_telemetry("download_stream_completed", wallet=wallet, modelId=model_id, ipfs_cid=ipfs_hash, bytes_sent=bytes_sent, duration_ms=duration_ms)
+        except Exception as e:
+            duration_ms = int((time.time() - t0) * 1000)
+            await emit_telemetry("download_stream_failed", wallet=wallet, modelId=model_id, ipfs_cid=ipfs_hash, bytes_sent=bytes_sent, duration_ms=duration_ms, error=str(e))
+            raise
 
     # Peek at headers first
     async with httpx.AsyncClient() as head_client:

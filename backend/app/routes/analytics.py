@@ -14,8 +14,10 @@ Improvements in v5:
 - Weekly breakdown for the current month
 - Buyer retention metric (repeat buyers across models)
 """
+import asyncio
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from supabase import create_client, Client
 from ..config import get_settings, Settings
 from ..cache import cache_get, cache_set
@@ -27,6 +29,26 @@ router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 def get_service_supabase(settings: Settings = Depends(get_settings)) -> Client:
     """Service key — safe here because FastAPI validates the JWT first."""
     return create_client(settings.supabase_url, settings.supabase_service_role_key)
+
+
+class LogEventSchema(BaseModel):
+    event: str
+    wallet: str | None = None
+    modelId: int | None = None
+    context: dict | None = None
+
+async def _sink_event(event_data: dict):
+    # Phase 1: Simple stdout logging. (Phase 2: write to Postgres/Sentry)
+    print(f"[TELEMETRY] {event_data['event'].upper()} | Wallet: {event_data.get('wallet')} | Model: {event_data.get('modelId')} | Context: {event_data.get('context')}")
+
+@router.post("/log")
+async def log_client_event(event: LogEventSchema):
+    """
+    Non-blocking telemetry endpoint. Accepts generic client events
+    and fires a background task to process/sink them safely.
+    """
+    asyncio.create_task(_sink_event(event.model_dump()))
+    return {"status": "accepted"}
 
 
 @router.get("/dashboard")

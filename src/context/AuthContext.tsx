@@ -13,6 +13,7 @@ import {
   createContext, useContext, useState, useCallback,
   useEffect, type ReactNode,
 } from "react";
+import { logEvent } from "../lib/analytics";
 import { useWallet } from "./WalletContext";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
@@ -68,7 +69,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // 2. Sign with MetaMask
       const signer = await provider.getSigner();
+      logEvent("signature_requested", { wallet: address });
       const signature = await signer.signMessage(message);
+      logEvent("signature_success", { wallet: address });
 
       // 3. Verify → get JWT
       const verifyRes = await fetch(`${API_BASE}/auth/verify`, {
@@ -85,7 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(TOKEN_KEY, access_token);
       setState({ token: access_token, role, isAuthenticated: true, isSigning: false, authError: null });
     } catch (err: any) {
-      setState(s => ({ ...s, isSigning: false, authError: err.message ?? "Sign-in failed" }));
+      setState(s => ({ ...s, isSigning: false, authError: err.code === 4001 ? "Signature rejected." : "Failed to sign in." }));
+      logEvent("signature_rejected", { wallet: address, errorCode: err.code, errorMessage: err.message });
     }
   }, [address, provider]);
 

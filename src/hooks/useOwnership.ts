@@ -37,6 +37,7 @@ export function useOwnership() {
     },
     enabled: !!address && !!token,
     staleTime: 5 * 60_000, // ownership rarely changes mid-session — cache 5 min
+    refetchOnMount: "always", // Always double check on page navigate to prevent falsely locked states
   });
 
   /** O(1) ownership check */

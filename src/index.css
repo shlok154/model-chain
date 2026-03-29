@@ -51,6 +51,15 @@ a { color: inherit; text-decoration: none; }
 button { font-family: inherit; cursor: pointer; border: none; background: none; }
 input, textarea, select { font-family: inherit; }
 
+/* Accessibility focus parity */
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .model-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+button, a, input, textarea, select, .model-card {
+  outline: none;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg-1); }
@@ -528,11 +537,14 @@ input, textarea, select { font-family: inherit; }
 }
 
 .model-card--skeleton {
-  height: 160px;
+  min-height: 250px;
+  height: 100%;
+  border-radius: var(--radius);
   background: linear-gradient(90deg, var(--bg-1) 25%, var(--bg-2) 50%, var(--bg-1) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   cursor: default;
+  border: 1px solid var(--border);
 }
 
 @keyframes shimmer {

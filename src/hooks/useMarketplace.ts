@@ -14,6 +14,7 @@ import { ethers } from "ethers";
 import { useWallet } from "../context/WalletContext";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
+import { logEvent } from "../lib/analytics";
 import { MARKETPLACE_ABI, MARKETPLACE_ADDRESS } from "../contracts/marketplace";
 import { supabase, isSupabaseReady } from "../lib/supabase";
 import type { Transaction } from "../types";
@@ -61,14 +62,17 @@ export function useMarketplace() {
         }
       }
       try {
+        logEvent("tx_initiated", { wallet: address, modelId, method: "purchaseModel" });
         const contract = getSignedContract();
         const tx = await contract.purchaseModel(modelId, { value: priceWei });
+        logEvent("tx_submitted", { wallet: address, modelId, txHash: tx.hash });
         const receipt = await tx.wait();
         // Invalidate both ownership and model list caches after a confirmed purchase.
         // Ownership: so "Owned ✅" badge appears immediately everywhere.
         // Models list: so the purchases count on marketplace cards updates.
         qc.invalidateQueries({ queryKey: ["ownership", address ?? ""] });
         qc.invalidateQueries({ queryKey: ["models"] });
+        logEvent("tx_confirmed", { wallet: address, modelId, txHash: receipt.hash, gasUsed: String(receipt.gasUsed) });
         return { hash: receipt.hash, status: "confirmed", error: null };
       } catch (err: any) {
         const msg = err.reason ?? err.message ?? "Transaction failed";
@@ -80,6 +84,7 @@ export function useMarketplace() {
         } else {
           friendlyError = msg;
         }
+        logEvent("tx_failed", { wallet: address, modelId, errorCode: err.code, errorMessage: friendlyError });
         return { hash: null, status: "failed", error: friendlyError };
       }
     },
@@ -130,11 +135,14 @@ export function useMarketplace() {
           params.category,
           params.royaltyPercent
         );
+        logEvent("tx_submitted", { wallet: address, method: "listModel", txHash: tx.hash });
         const receipt = await tx.wait();
         // Invalidate model list so the new model appears immediately.
         qc.invalidateQueries({ queryKey: ["models"] });
+        logEvent("model_listed", { wallet: address, txHash: receipt.hash });
         return { hash: receipt.hash, status: "confirmed", error: null };
       } catch (err: any) {
+        logEvent("model_list_failed", { wallet: address, errorMessage: err.reason ?? err.message });
         return {
           hash: null,
           status: "failed",

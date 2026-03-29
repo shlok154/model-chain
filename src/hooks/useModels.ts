@@ -108,6 +108,8 @@ export function useModels(params: ModelListParams = {}) {
       return { models: creator ? filtered : filtered.slice(page * limit, (page + 1) * limit), total: filtered.length };
     },
     placeholderData: (prev) => prev,
+    staleTime: 30_000,
+    refetchOnMount: "always",
   });
 }
 
@@ -131,6 +133,7 @@ export function useModel(id: number) {
     },
     enabled: id > 0,
     staleTime: 5 * 60_000, // model details rarely change — cache 5 min
+    refetchOnMount: "always",
   });
 }
 

@@ -129,7 +129,20 @@ export default function MarketplacePage() {
           {models.length === 0 ? (
             <div className="empty-state">No models found matching your filters.</div>
           ) : models.map((model) => (
-            <div key={model.id} className={`model-card ${owns(model.id) ? "model-card--owned" : ""}`} onClick={() => navigate(`/model/${model.id}`)}>
+            <div
+              key={model.id}
+              className={`model-card ${owns(model.id) ? "model-card--owned" : ""}`}
+              onClick={() => navigate(`/model/${model.id}`)}
+              role="button"
+              tabIndex={0}
+              aria-label={`View details for ${model.name}`}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  navigate(`/model/${model.id}`);
+                }
+              }}
+            >
               <div className="model-thumbnail">
                 <img
                   src={`https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(model.name)}&backgroundColor=080a0f&size=64`}
