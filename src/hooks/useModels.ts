@@ -5,9 +5,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ethers } from "ethers";
 import { useAuth } from "../context/AuthContext";
-import { api, API_BASE, ApiError } from "../lib/api";
+import { api } from "../lib/api";
 import { supabase, isSupabaseReady } from "../lib/supabase";
-import { MARKETPLACE_ABI, MARKETPLACE_ADDRESS } from "../contracts/marketplace";
 import type { Model } from "../types";
 
 // ── Query keys (centralised so invalidation is consistent) ───────────────────
@@ -55,7 +54,7 @@ export interface ModelListParams {
 
 export function useModels(params: ModelListParams = {}) {
   const { token } = useAuth();
-  const { page = 0, limit = 20, category, search, min_price, max_price, sort_by = "created_at", order = "desc", creator } = params;
+  const { page = 0, limit = 20, category, search, min_price, max_price, creator } = params;
 
   return useQuery({
     queryKey: modelKeys.list(params),
@@ -63,7 +62,7 @@ export function useModels(params: ModelListParams = {}) {
       // Try backend API first (has search + caching)
       try {
         const qs = new URLSearchParams({
-          page: String(page), limit: String(creator ? 200 : limit), sort_by, order,
+          page: String(page), limit: String(creator ? 200 : limit),
           ...(category  && { category }),
           ...(search    && { search }),
           ...(creator   && { creator }),
@@ -71,7 +70,9 @@ export function useModels(params: ModelListParams = {}) {
           ...(max_price != null && { max_price: String(max_price) }),
         });
         const result = await api.get<{ data: any[]; total: number }>(`/api/models?${qs}`, token);
-        return { models: result.data.map(rowToModel), total: result.total };
+        console.log("API RESULT:", result);
+        const rows = Array.isArray(result?.data) ? result.data : [];
+        return { models: rows.map(rowToModel), total: result?.total ?? rows.length };
       } catch { /* backend unavailable */ }
 
       // Supabase fallback
