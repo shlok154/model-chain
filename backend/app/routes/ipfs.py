@@ -114,7 +114,7 @@ async def download_from_ipfs(
 
     supa = create_client(settings.supabase_url, settings.supabase_service_role_key)
 
-    model_res = supa.table("models").select("id, creator_address, name").eq(
+    model_res = supa.table("models").select("id, creator_address, name, price_eth").eq(
         "ipfs_hash", ipfs_hash
     ).limit(1).execute()
     if not model_res.data:
@@ -123,6 +123,7 @@ async def download_from_ipfs(
     model_id     = model_res.data[0]["id"]
     creator_addr = model_res.data[0]["creator_address"]
     model_name   = model_res.data[0].get("name", ipfs_hash)
+    model_price  = model_res.data[0].get("price_eth", 0)
 
     # Creator always has access to their own model
     if wallet != creator_addr:
@@ -158,14 +159,44 @@ async def download_from_ipfs(
                     model_id, 
                     AsyncWeb3.to_checksum_address(wallet)
                 ).call()
+                
+                # Self-healing cache: if the contract says they own it, but our DB missed it
+                # (e.g. event listener lag), backfill the purchase record so next time it's fast.
+                if has_access:
+                    try:
+                        print(f"[IPFS] Fallback success: {wallet} -> model {model_id}")
+                        supa.table("purchases").upsert({
+                            "model_id": model_id,
+                            "buyer_address": wallet,
+                            "price_paid_eth": model_price,
+                            "on_chain_tx": None,
+                            "verification_source": "chain_fallback"
+                        }, on_conflict="model_id,buyer_address").execute()
+                    except Exception as ins_err:
+                        # Log but don't fail the download if caching fails
+                        print(f"[IPFS Download] Failed to cache fallback purchase: {ins_err}")
+
             except Exception as e:
                 print(f"[IPFS Download] On-chain access check failed for {wallet}: {e}")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Temporary verification failure, please retry"
+                )
 
         if not has_access:
             raise HTTPException(
                 status_code=403,
                 detail="Purchase required to download this model.",
             )
+
+    try:
+        supa.table("downloads").upsert({
+            "model_id": model_id,
+            "user_address": wallet,
+            "source": "api_download"
+        }, on_conflict="model_id,user_address").execute()
+    except Exception as e:
+        print(f"[IPFS Download] Failed to write audit log: {e}")
 
     safe_name = re.sub(r"[^\w.\-]", "_", model_name)[:80] or ipfs_hash
 

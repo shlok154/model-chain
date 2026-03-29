@@ -46,10 +46,11 @@ create table if not exists public.purchases (
   id               bigint generated always as identity primary key,
   model_id         bigint not null references public.models(id) on delete cascade,
   buyer_address    text not null,
-  price_paid_eth   numeric(18, 8) not null,
-  on_chain_tx      text,                       -- tx hash from the blockchain
-  is_simulated     boolean not null default false,
-  purchased_at     timestamptz not null default now()
+  price_paid_eth      numeric(18, 8) not null,
+  on_chain_tx         text,                       -- tx hash from the blockchain
+  verification_source text,                       -- e.g. 'event_listener', 'chain_fallback'
+  is_simulated        boolean not null default false,
+  purchased_at        timestamptz not null default now()
 );
 
 create index if not exists purchases_buyer_idx on public.purchases(buyer_address);
@@ -57,6 +58,19 @@ create index if not exists purchases_model_idx on public.purchases(model_id);
 -- Prevent duplicate rows for the same buyer+model combination.
 create unique index if not exists purchases_unique_idx
   on public.purchases(model_id, buyer_address);
+
+-- ── DOWNLOADS (Audit Logging) ────────────────────────────────────────────────
+-- Tracks every time a user downloads a model for analytics and abuse detection.
+create table if not exists public.downloads (
+  id               bigint generated always as identity primary key,
+  model_id         bigint not null references public.models(id) on delete cascade,
+  user_address     text not null,
+  source           text,
+  downloaded_at    timestamptz not null default now()
+);
+create index if not exists downloads_model_idx on public.downloads(model_id);
+create index if not exists downloads_user_idx on public.downloads(user_address);
+create unique index if not exists downloads_unique_once on public.downloads(model_id, user_address);
 
 -- ── RPC: increment_purchases ──────────────────────────────────
 -- Called after a confirmed purchase to keep the purchases counter in sync.

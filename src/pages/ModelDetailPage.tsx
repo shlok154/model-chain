@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useModel, useModelReviews, useSubmitReview } from "../hooks/useModels";
+import { useOwnership } from "../hooks/useOwnership";
 import { useMarketplace } from "../hooks/useMarketplace";
 import { useWallet } from "../context/WalletContext";
 import { useAuth } from "../context/AuthContext";
@@ -45,6 +46,7 @@ export default function ModelDetailPage() {
   const { address, connect }           = useWallet();
   const { isAuthenticated, isSigning, signIn, authFetch } = useAuth();
   const { toUsd }                      = useEthPrice();
+  const { owns, markOwned }            = useOwnership();
 
   const [hasAccess,     setHasAccess]     = useState<boolean | null>(null); // null = still checking
   const [tx,            setTx]            = useState<Transaction>({ hash: null, status: "idle", error: null });
@@ -61,6 +63,8 @@ export default function ModelDetailPage() {
     checkAccess(modelId).then((v) => { if (!cancelled) setHasAccess(v); });
     return () => { cancelled = true; };
   }, [model, address, modelId, checkAccess]);
+
+  const isOwned = owns(modelId) || hasAccess;
 
   // Phase 4: Review form state
   const [reviewRating,  setReviewRating]  = useState(0);
@@ -122,6 +126,7 @@ export default function ModelDetailPage() {
     const result = await purchaseModel(model.id, model.priceWei, model.price);
     setTx(result);
     if (result.status === "confirmed") {
+      markOwned(modelId);
       // Re-verify on-chain after tx confirms — source of truth is the contract
       const verified = await checkAccess(modelId);
       setHasAccess(verified);
@@ -278,11 +283,13 @@ export default function ModelDetailPage() {
             <p className="purchase-price">{model.price} ETH</p>
             <p className="purchase-usd">{toUsd(model.price)}</p>
 
-            {hasAccess === null && address ? (
+            {hasAccess === null && address && !owns(modelId) ? (
               <button className="btn btn--primary btn--full" disabled>Checking access…</button>
-            ) : hasAccess ? (
+            ) : isOwned ? (
               <div className="access-granted">
-                <span className="access-badge">✓ You own this model</span>
+                <div className="success-banner" style={{ background: "rgba(34, 211, 160, 0.1)", border: "1px solid rgba(34, 211, 160, 0.2)", color: "var(--green)", padding: "10px", borderRadius: "8px", margin: "0 auto 10px", fontSize: "13px", fontWeight: 600, width: "100%", textAlign: "center" }}>
+                  Access unlocked ✅
+                </div>
                 <button
                   className="btn btn--primary"
                   onClick={handleSecureDownload}
@@ -295,8 +302,9 @@ export default function ModelDetailPage() {
                 )}
               </div>
             ) : (
-              <button className="btn btn--primary btn--full" onClick={handlePurchase} disabled={isPurchasing}>
+              <button className="btn btn--primary btn--full" onClick={handlePurchase} disabled={isPurchasing || !!isOwned}>
                 {!address ? "Connect Wallet to Purchase"
+                  : isOwned ? "Already Owned"
                   : isPurchasing ? "Processing transaction…"
                   : `Purchase for ${model.price} ETH`}
               </button>

@@ -14,6 +14,7 @@ export default function MarketplacePage() {
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [sortBy,   setSortBy]   = useState<"created_at" | "price_eth" | "purchases">("created_at");
+  const [ownershipFilter, setOwnershipFilter] = useState<"all" | "owned" | "unowned">("all");
 
   const params: ModelListParams = {
     page, limit: PAGE_SIZE,
@@ -26,10 +27,19 @@ export default function MarketplacePage() {
   };
 
   const { data, isLoading, isError, isFetching } = useModels(params);
-  const models     = data?.models ?? [];
-  const total      = data?.total  ?? 0;
+  const { owns }     = useOwnership();
+  
+  let models = data?.models ?? [];
+  const total = data?.total ?? 0;
+  
+  // Client-side ownership filtering
+  if (ownershipFilter !== "all") {
+    models = models.filter((m) =>
+      ownershipFilter === "owned" ? owns(m.id) : !owns(m.id)
+    );
+  }
+  
   const totalPages = Math.ceil(total / PAGE_SIZE);
-  const { owns }   = useOwnership();
 
   const handleSearch = (val: string) => { setSearch(val); setPage(0); };
   const handleCategory = (cat: string) => { setCategory(cat); setPage(0); };
@@ -93,6 +103,16 @@ export default function MarketplacePage() {
           <option value="price_eth">Price</option>
           <option value="purchases">Most Popular</option>
         </select>
+        <select
+          className="field-input field-select"
+          style={{ width: 160, padding: "6px 10px", fontSize: 13 }}
+          value={ownershipFilter}
+          onChange={(e) => setOwnershipFilter(e.target.value as any)}
+        >
+          <option value="all">All Models</option>
+          <option value="owned">Owned</option>
+          <option value="unowned">Not Owned</option>
+        </select>
         {isFetching && !isLoading && (
           <span style={{ fontSize: 12, color: "var(--text-3)", alignSelf: "center" }}>Updating…</span>
         )}
@@ -109,11 +129,15 @@ export default function MarketplacePage() {
           {models.length === 0 ? (
             <div className="empty-state">No models found matching your filters.</div>
           ) : models.map((model) => (
-            <div key={model.id} className="model-card" onClick={() => navigate(`/model/${model.id}`)}>
+            <div key={model.id} className={`model-card ${owns(model.id) ? "model-card--owned" : ""}`} onClick={() => navigate(`/model/${model.id}`)}>
               <div className="model-card-top">
                 <span className="model-category">{model.category}</span>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  {owns(model.id) && <span className="escrow-badge escrow-badge--released" style={{ fontSize: 10, padding: "2px 8px" }}>Owned ✅</span>}
+                  {owns(model.id) ? (
+                    <span className="escrow-badge escrow-badge--released" style={{ fontSize: 10, padding: "2px 8px" }} title="You already own this model">Owned ✅</span>
+                  ) : (
+                    <span className="chain-badge" style={{ fontSize: 10, padding: "2px 8px" }}>🔒 Locked</span>
+                  )}
                   <span className="model-purchases">{model.purchases} buyers</span>
                 </div>
               </div>
