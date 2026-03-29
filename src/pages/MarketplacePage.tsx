@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useModels, type ModelListParams } from "../hooks/useModels";
+import { useOwnership } from "../hooks/useOwnership";
 
 const CATEGORIES = ["All", "NLP", "Computer Vision", "LLM", "Audio", "Tabular", "Generative"];
 const PAGE_SIZE = 20;
@@ -28,6 +29,7 @@ export default function MarketplacePage() {
   const models     = data?.models ?? [];
   const total      = data?.total  ?? 0;
   const totalPages = Math.ceil(total / PAGE_SIZE);
+  const { owns }   = useOwnership();
 
   const handleSearch = (val: string) => { setSearch(val); setPage(0); };
   const handleCategory = (cat: string) => { setCategory(cat); setPage(0); };
@@ -110,7 +112,10 @@ export default function MarketplacePage() {
             <div key={model.id} className="model-card" onClick={() => navigate(`/model/${model.id}`)}>
               <div className="model-card-top">
                 <span className="model-category">{model.category}</span>
-                <span className="model-purchases">{model.purchases} buyers</span>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {owns(model.id) && <span className="escrow-badge escrow-badge--released" style={{ fontSize: 10, padding: "2px 8px" }}>Owned ✅</span>}
+                  <span className="model-purchases">{model.purchases} buyers</span>
+                </div>
               </div>
               <h3 className="model-name">{model.name}</h3>
               <p className="model-desc">{model.description}</p>
