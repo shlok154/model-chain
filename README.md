@@ -111,6 +111,18 @@ Stream from IPFS (constant memory)
 
 ---
 
+---
+
+## ⚡ Performance Optimizations
+
+- Route-based code splitting (lazy + Suspense)
+- Vendor chunk splitting (React, ethers, Supabase)
+- Skeleton loading for better UX
+- Preconnect for external services (Alchemy, Supabase, Pinata)
+- Optimized caching strategy
+
+---
+
 ## Key Engineering Design
 
 * Backend-enforced access control (not frontend trust)
