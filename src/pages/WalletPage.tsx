@@ -390,7 +390,7 @@ export default function WalletPage() {
                         <span style={{ fontWeight: 600 }}>Dead-Letter Queue: </span>
                         <span className="chain-badge chain-badge--warn">{adminData.dead_letter_count} failed events</span>
                         <div style={{ marginTop: 8 }}>
-                          {adminData.dead_letters_recent.map((dl, i) => (
+                          {(adminData.dead_letters_recent ?? []).map((dl, i) => (
                             <div key={i} className="admin-stat-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
                               <span style={{ fontWeight: 600 }}>{dl.event}</span>
                               <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{dl.error}</span>

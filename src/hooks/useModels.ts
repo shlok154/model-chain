@@ -30,10 +30,14 @@ const DEMO_MODELS: Model[] = [
 function rowToModel(row: any): Model {
   return {
     id: row.id, name: row.name, description: row.description,
-    price: String(row.price_eth), priceWei: ethers.parseEther(String(row.price_eth)),
-    creator: row.creator_address, ipfsHash: row.ipfs_hash,
-    version: row.version, license: row.license, category: row.category,
-    royaltyPercent: row.royalty_percent, purchases: row.purchases ?? 0,
+    price: String(row.price_eth ?? 0), priceWei: ethers.parseEther(String(row.price_eth ?? 0)),
+    creator: row.creator_address ?? "", ipfsHash: row.ipfs_hash ?? "",
+    version: row.version ?? "1.0.0", license: row.license ?? "MIT", category: row.category ?? "",
+    royaltyPercent: row.royalty_percent ?? 0, purchases: row.purchases ?? 0,
+    // Preserve extra backend fields (avg_rating, review_count, creator profile, etc.)
+    ...(row.avg_rating != null && { avg_rating: row.avg_rating }),
+    ...(row.review_count != null && { review_count: row.review_count }),
+    ...(row.creator && typeof row.creator === "object" && { creatorProfile: row.creator }),
   };
 }
 
@@ -113,7 +117,10 @@ export function useModel(id: number) {
     queryKey: modelKeys.detail(id),
     queryFn: async () => {
       try {
-        return await api.get<any>(`/api/models/${id}`, token);
+        const raw = await api.get<any>(`/api/models/${id}`, token);
+        // Backend returns snake_case fields — normalize to camelCase via rowToModel
+        if (raw && raw.id) return rowToModel(raw);
+        return null;
       } catch { /* fallback */ }
 
       if (isSupabaseReady()) {
