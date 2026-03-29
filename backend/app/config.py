@@ -3,7 +3,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # JWT
-    jwt_secret: str = "change-me-in-production"
+    jwt_secret: str = "test-secret-key-minimum-32-characters-long"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # 24h
 
