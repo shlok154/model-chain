@@ -120,10 +120,20 @@ async def get_own_purchases(
     """
     supa = _supa(settings)
     res = supa.table("purchases").select(
-        "id, model_id, price_paid_eth, on_chain_tx, purchased_at, models(name)"
+        "id, model_id, price_paid_eth, on_chain_tx, is_simulated, purchased_at, "
+        "models(name, description, category, price_eth, ipfs_hash, version, license)"
     ).eq("buyer_address", wallet).order("purchased_at", desc=True).execute()
 
     return [
-        {**row, "model_name": (row.get("models") or {}).get("name") or f"Model #{row['model_id']}"}
+        {
+            **{k: v for k, v in row.items() if k != "models"},
+            "model_name": (row.get("models") or {}).get("name") or f"Model #{row['model_id']}",
+            "model_description": (row.get("models") or {}).get("description") or "",
+            "model_category": (row.get("models") or {}).get("category") or "",
+            "model_price_eth": (row.get("models") or {}).get("price_eth"),
+            "model_ipfs_hash": (row.get("models") or {}).get("ipfs_hash") or "",
+            "model_version": (row.get("models") or {}).get("version") or "",
+            "model_license": (row.get("models") or {}).get("license") or "",
+        }
         for row in (res.data or [])
     ]

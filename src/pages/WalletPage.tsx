@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ethers } from "ethers";
 import { useWallet } from "../context/WalletContext";
@@ -14,8 +15,14 @@ interface EscrowRow {
   id: number;
   model_id: number;
   model_name: string;
+  model_description?: string;
+  model_category?: string;
+  model_price_eth?: number;
+  model_version?: string;
+  model_license?: string;
   price_paid_eth: number;
   on_chain_tx: string | null;
+  is_simulated?: boolean;
   purchased_at: string;
   escrow_id_onchain?: number;
   released?: boolean;
@@ -159,6 +166,7 @@ function useWithdrawPlatformFees() {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function WalletPage() {
+  const navigate  = useNavigate();
   const { address, balance, chainId, isConnecting, error, connect, disconnect } = useWallet();
   const { isAuthenticated, isSigning, signIn, signOut, authError, token, role } = useAuth();
   const { toUsd } = useEthPrice();
@@ -476,37 +484,55 @@ export default function WalletPage() {
                     const daysLeft     = Math.max(0, Math.ceil((escrowExpiry.getTime() - Date.now()) / 86_400_000));
 
                     return (
-                      <div key={p.id} className="escrow-row">
-                        <div className="escrow-info">
-                          <p className="escrow-model-name">{p.model_name}</p>
-                          <p className="escrow-meta">
-                            {p.price_paid_eth} ETH · {purchaseDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                          </p>
-                          {p.on_chain_tx && (
-                            <a href={`https://sepolia.etherscan.io/tx/${p.on_chain_tx}`}
-                              target="_blank" rel="noreferrer" className="tx-link" style={{ fontSize: 11 }}>
-                              View tx ↗
-                            </a>
-                          )}
-                        </div>
-
-                        <div className="escrow-actions">
-                          {isExpired ? (
-                            <span className="escrow-badge escrow-badge--released">Escrow released</span>
-                          ) : (
-                            <span className="escrow-badge escrow-badge--pending">{daysLeft}d escrow</span>
-                          )}
-
-                          {!isExpired && MARKETPLACE_ADDRESS !== "0x0000000000000000000000000000000000000000" && (
-                            <button
-                              className="btn btn--secondary"
-                              style={{ fontSize: 12, padding: "6px 12px" }}
-                              onClick={() => handleConfirm(p.model_id)}
-                              disabled={isConfirming || confirmDelivery.isPending}
+                      <div key={p.id} className="escrow-row" style={{ flexDirection: "column", gap: 10 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                          <div className="escrow-info">
+                            <p className="escrow-model-name"
+                              style={{ cursor: "pointer", textDecoration: "underline", textDecorationColor: "var(--border)" }}
+                              onClick={() => navigate(`/model/${p.model_id}`)}
                             >
-                              {isConfirming ? "Confirming…" : "Confirm Delivery"}
-                            </button>
-                          )}
+                              {p.model_name}
+                            </p>
+                            {p.model_description && (
+                              <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 0", lineHeight: 1.4, maxWidth: 420 }}>
+                                {p.model_description.length > 100 ? p.model_description.slice(0, 100) + "…" : p.model_description}
+                              </p>
+                            )}
+                            <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+                              {p.model_category && <span className="model-category">{p.model_category}</span>}
+                              {p.model_version && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>v{p.model_version}</span>}
+                              {p.model_license && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.model_license}</span>}
+                              {p.is_simulated && <span className="chain-badge chain-badge--warn" style={{ fontSize: 10 }}>simulated</span>}
+                            </div>
+                            <p className="escrow-meta" style={{ marginTop: 6 }}>
+                              {p.price_paid_eth} ETH · {purchaseDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </p>
+                            {p.on_chain_tx && (
+                              <a href={`https://sepolia.etherscan.io/tx/${p.on_chain_tx}`}
+                                target="_blank" rel="noreferrer" className="tx-link" style={{ fontSize: 11 }}>
+                                View tx ↗
+                              </a>
+                            )}
+                          </div>
+
+                          <div className="escrow-actions">
+                            {isExpired ? (
+                              <span className="escrow-badge escrow-badge--released">Escrow released</span>
+                            ) : (
+                              <span className="escrow-badge escrow-badge--pending">{daysLeft}d escrow</span>
+                            )}
+
+                            {!isExpired && MARKETPLACE_ADDRESS !== "0x0000000000000000000000000000000000000000" && (
+                              <button
+                                className="btn btn--secondary"
+                                style={{ fontSize: 12, padding: "6px 12px" }}
+                                onClick={() => handleConfirm(p.model_id)}
+                                disabled={isConfirming || confirmDelivery.isPending}
+                              >
+                                {isConfirming ? "Confirming…" : "Confirm Delivery"}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
