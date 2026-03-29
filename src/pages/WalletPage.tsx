@@ -303,6 +303,32 @@ export default function WalletPage() {
                 </a>
                 <button className="btn btn--danger" onClick={disconnect}>Disconnect</button>
               </div>
+
+              {/* ── Trust Indicators ──────────────────────────────────────── */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--green)" }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  <span>Wallet Connected</span>
+                </div>
+                {isAuthenticated && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--green)" }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    <span>Authenticated (JWT Active)</span>
+                  </div>
+                )}
+                {role && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--green)" }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    <span>Role: {role.charAt(0).toUpperCase() + role.slice(1)}</span>
+                  </div>
+                )}
+                {!isAuthenticated && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)" }}>
+                    <span style={{ width: 14, height: 14, display: "inline-block", textAlign: "center" }}>○</span>
+                    <span>Not authenticated — sign in to unlock full features</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* ── Auth sign-in card ─────────────────────────────────────────── */}

@@ -2,11 +2,15 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWallet } from "../context/WalletContext";
 import { useAuth } from "../context/AuthContext";
-import { useDashboardStats } from "../hooks/useAnalytics";
+import { useDashboardStats, useTelemetryInsights } from "../hooks/useAnalytics";
 import { useMarketplace } from "../hooks/useMarketplace";
 import { useEthPrice } from "../hooks/useEthPrice";
 import TxBadge from "../components/TxBadge";
 import type { Transaction } from "../types";
+import {
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  BarChart, Bar, CartesianGrid,
+} from "recharts";
 
 // ── Inline star display (read-only) ───────────────────────────────────────────
 function Stars({ value }: { value: number }) {
@@ -37,11 +41,23 @@ function ChangeBadge({ pct }: { pct: number | null | undefined }) {
   );
 }
 
+// ── Chart tooltip ──────────────────────────────────────────────────────────────
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 12px", fontSize: 12 }}>
+      <p style={{ fontWeight: 600, marginBottom: 2 }}>{label}</p>
+      <p style={{ color: "var(--accent)" }}>{payload[0].value} ETH</p>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { address } = useWallet();
   const { isAuthenticated, signIn, isSigning } = useAuth();
   const { data: stats, isLoading, error: statsError } = useDashboardStats(address);
+  const { data: insights, isLoading: insightsLoading } = useTelemetryInsights();
   const { withdrawEarnings, getEarnings } = useMarketplace();
   const { toUsd } = useEthPrice();
 
@@ -69,20 +85,23 @@ export default function DashboardPage() {
     setIsWithdrawing(false);
   };
 
-  const maxEth    = stats ? Math.max(...(stats.monthly_revenue ?? []).map((d) => d.eth), 0.001) : 0.001;
-  const maxWeekly = stats ? Math.max(...(stats.weekly_revenue_mtd ?? []).map((d) => d.eth), 0.001) : 0.001;
   const canWithdraw = earningsLoaded && parseFloat(earnings) > 0 && !!address;
-
   const pc = stats?.period_comparison;
   const br = stats?.buyer_retention;
 
   // ── Stat cards config ──────────────────────────────────────────────────────
+  const conversionRate = insights
+    ? (insights.conversion_funnel.purchased > 0 && insights.conversion_funnel.viewed > 0)
+      ? ((insights.conversion_funnel.purchased / insights.conversion_funnel.viewed) * 100).toFixed(1) + "%"
+      : "—"
+    : "—";
+
   const statCards = stats
     ? [
-        { label: "Total Earned",   value: `${stats.total_earned} ETH`, sub: toUsd(String(stats.total_earned)) },
-        { label: "Models Listed",  value: String(stats.models_listed), sub: "" },
-        { label: "Total Sales",    value: String(stats.total_sales),   sub: `${stats.unique_buyers} unique buyers` },
-        { label: "Avg Royalty",    value: `${stats.avg_royalty}%`,     sub: "" },
+        { label: "Total Earned",    value: `${stats.total_earned} ETH`, sub: toUsd(String(stats.total_earned)) },
+        { label: "Total Sales",     value: String(stats.total_sales),   sub: `${stats.unique_buyers} unique buyers` },
+        { label: "Models Listed",   value: String(stats.models_listed), sub: "" },
+        { label: "Conversion Rate", value: conversionRate,              sub: "view → purchase" },
         ...(stats.avg_rating != null
           ? [{ label: "Avg Rating", value: `${stats.avg_rating} / 5`, sub: `${stats.total_reviews} review${stats.total_reviews !== 1 ? "s" : ""}` }]
           : []),
@@ -116,11 +135,10 @@ export default function DashboardPage() {
         <div className="error-banner">Could not load analytics — showing cached or demo data.</div>
       )}
 
-      {/* ── Data consistency warning (only shown to creator if counter drifted) */}
+      {/* ── Data consistency warning */}
       {stats?.consistency_warnings && stats.consistency_warnings.length > 0 && (
         <div className="warn-banner" style={{ fontSize: 13 }}>
           ⚠ Purchase counter drift detected — analytics may be slightly inaccurate.
-          The platform operator has been notified. Affected models:{" "}
           {stats.consistency_warnings.map((w) => <code key={w} style={{ marginRight: 6 }}>{w}</code>)}
         </div>
       )}
@@ -173,82 +191,85 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ── Monthly revenue chart ────────────────────────────────────────── */}
+        {/* ── Monthly revenue — Recharts area chart ────────────────────────── */}
         <div className="chart-card">
           <h3 className="card-title">Monthly Revenue (ETH)</h3>
           {isLoading ? (
-            <SkeletonCard height={160} />
+            <SkeletonCard height={200} />
           ) : (
-            <div className="bar-chart">
-              {(stats?.monthly_revenue ?? []).map((d) => (
-                <div key={d.month} className="bar-col">
-                  <span className="bar-value">{d.eth > 0 ? d.eth.toFixed(3) : ""}</span>
-                  <div className="bar" style={{ height: `${(d.eth / maxEth) * 140}px` }} />
-                  <span className="bar-label">{d.month}</span>
-                </div>
-              ))}
-            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={stats?.monthly_revenue ?? []} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="month" tick={{ fill: "var(--text-muted)", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltip />} />
+                <Area type="monotone" dataKey="eth" stroke="var(--accent)" fill="url(#revenueGrad)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
           )}
         </div>
-
-        {/* ── Weekly revenue (current month to date) ───────────────────────── */}
-        {(isLoading || (stats?.weekly_revenue_mtd && stats.weekly_revenue_mtd.length > 0)) && (
-          <div className="chart-card chart-card--compact">
-            <h3 className="card-title">This Month by Week (ETH)</h3>
-            {isLoading ? (
-              <SkeletonCard height={100} />
-            ) : (
-              <div className="bar-chart bar-chart--small">
-                {(stats?.weekly_revenue_mtd ?? []).map((d) => (
-                  <div key={d.week} className="bar-col">
-                    <span className="bar-value">{d.eth > 0 ? d.eth.toFixed(3) : ""}</span>
-                    <div className="bar" style={{ height: `${(d.eth / maxWeekly) * 80}px` }} />
-                    <span className="bar-label">{d.week}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* ── Two-column bottom section ────────────────────────────────────── */}
         <div className="dashboard-bottom">
           {/* Top models table */}
           {(isLoading || (stats?.top_models && stats.top_models.length > 0)) && (
             <div className="chart-card chart-card--grow">
-              <h3 className="card-title">Top Models</h3>
+              <h3 className="card-title">Model Performance</h3>
               {isLoading ? (
                 <SkeletonCard height={160} />
               ) : (
-                <div className="top-models-list">
-                  {(stats?.top_models ?? []).map((m, i) => (
-                    <div
-                      key={m.id}
-                      className="top-model-row top-model-row--clickable"
-                      onClick={() => navigate(`/model/${m.id}`)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => e.key === "Enter" && navigate(`/model/${m.id}`)}
-                    >
-                      <span className="top-model-rank">#{i + 1}</span>
-                      <span className="top-model-name">{m.name}</span>
-                      {m.category && <span className="model-category">{m.category}</span>}
-                      {m.avg_rating != null && (
-                        <span className="top-model-rating">
-                          <Stars value={m.avg_rating} />
-                          <span className="top-model-rating-label">{m.avg_rating}</span>
-                        </span>
-                      )}
-                      <span className="top-model-sales">
-                        {/* Use actual_purchases (from purchase rows) if available, else counter */}
-                        {m.actual_purchases ?? m.purchases} sales
-                      </span>
-                      <span className="top-model-revenue">{m.revenue} ETH</span>
-                      {m.revenue_share_pct != null && (
-                        <span className="change-badge change-badge--neutral">{m.revenue_share_pct}%</span>
-                      )}
-                    </div>
-                  ))}
+                <div style={{ overflowX: "auto" }}>
+                  <table className="perf-table">
+                    <thead>
+                      <tr>
+                        <th>Model</th>
+                        <th>Price</th>
+                        <th>Sales</th>
+                        <th>Revenue</th>
+                        <th>Rating</th>
+                        <th>Share</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(stats?.top_models ?? []).map((m) => (
+                        <tr
+                          key={m.id}
+                          className="perf-table__row"
+                          onClick={() => navigate(`/model/${m.id}`)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => e.key === "Enter" && navigate(`/model/${m.id}`)}
+                        >
+                          <td>
+                            <span style={{ fontWeight: 600 }}>{m.name}</span>
+                            {m.category && <span className="model-category" style={{ marginLeft: 8 }}>{m.category}</span>}
+                          </td>
+                          <td>{m.price_eth} ETH</td>
+                          <td>{m.actual_purchases ?? m.purchases}</td>
+                          <td style={{ fontWeight: 600, color: "var(--green)" }}>{m.revenue} ETH</td>
+                          <td>
+                            {m.avg_rating != null ? (
+                              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                <Stars value={m.avg_rating} />
+                                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{m.avg_rating}</span>
+                              </span>
+                            ) : "—"}
+                          </td>
+                          <td>
+                            {m.revenue_share_pct != null && (
+                              <span className="change-badge change-badge--neutral">{m.revenue_share_pct}%</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -302,6 +323,63 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* ── Failure Insights Panel ───────────────────────────────────────── */}
+        <div className="chart-card">
+          <h3 className="card-title">Failure Insights</h3>
+          <p className="card-subtitle">Top reasons users fail to complete transactions</p>
+          {insightsLoading ? (
+            <SkeletonCard height={120} />
+          ) : insights && insights.failure_reasons.length > 0 ? (
+            <div style={{ marginTop: 16 }}>
+              <ResponsiveContainer width="100%" height={Math.max(120, insights.failure_reasons.length * 40)}>
+                <BarChart data={insights.failure_reasons} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                  <XAxis type="number" tick={{ fill: "var(--text-muted)", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    type="category" dataKey="reason" width={180}
+                    tick={{ fill: "var(--text-2)", fontSize: 12 }} axisLine={false} tickLine={false}
+                  />
+                  <Tooltip
+                    contentStyle={{ background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
+                  />
+                  <Bar dataKey="count" fill="var(--red)" radius={[0, 4, 4, 0]} barSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="empty-state" style={{ marginTop: 12 }}>No transaction failures recorded yet.</div>
+          )}
+        </div>
+
+        {/* ── RPC Reliability Panel ────────────────────────────────────────── */}
+        <div className="chart-card">
+          <h3 className="card-title">RPC Reliability</h3>
+          {insightsLoading ? (
+            <SkeletonCard height={80} />
+          ) : insights ? (
+            <div style={{ display: "flex", gap: 32, flexWrap: "wrap", marginTop: 12 }}>
+              <div className="stat-card" style={{ flex: 1, minWidth: 140 }}>
+                <span className="stat-label">Success Rate</span>
+                <span className="stat-value" style={{ color: insights.rpc_health.success_rate >= 95 ? "var(--green)" : "var(--red)" }}>
+                  {insights.rpc_health.success_rate}%
+                </span>
+                <div style={{ marginTop: 8, height: 6, background: "var(--bg-3)", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${insights.rpc_health.success_rate}%`, background: insights.rpc_health.success_rate >= 95 ? "var(--green)" : "var(--red)", borderRadius: 3, transition: "width 0.5s ease" }} />
+                </div>
+              </div>
+              <div className="stat-card" style={{ flex: 1, minWidth: 140 }}>
+                <span className="stat-label">Avg Latency</span>
+                <span className="stat-value">{insights.rpc_health.avg_latency_ms}ms</span>
+              </div>
+              <div className="stat-card" style={{ flex: 1, minWidth: 140 }}>
+                <span className="stat-label">Total Calls</span>
+                <span className="stat-value">{insights.rpc_health.total_calls}</span>
+                <span className="stat-sub">{insights.rpc_health.errors} errors</span>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

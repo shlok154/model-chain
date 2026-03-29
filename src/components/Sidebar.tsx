@@ -13,6 +13,7 @@ interface NavLink {
 const NAV_LINKS: NavLink[] = [
   { href: "/", label: "Marketplace", icon: "⬡" },
   { href: "/dashboard", label: "Dashboard", icon: "◈" },
+  { href: "/insights", label: "Insights", icon: "◆", roles: ["creator", "admin"] },
   { href: "/upload", label: "Upload", icon: "⊕", roles: ["creator", "admin"] },
   { href: "/wallet", label: "Wallet", icon: "◎" },
   { href: "/profile", label: "Profile", icon: "◉" },

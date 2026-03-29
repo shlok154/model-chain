@@ -1,10 +1,13 @@
 import { API_BASE } from "./api";
 
+export type Priority = "critical" | "normal" | "debug";
+
 interface AnalyticsEvent {
   event: string;
   wallet?: string | null;
   modelId?: number | null;
   session_id: string;
+  priority: Priority;
   context?: Record<string, any>;
 }
 
@@ -26,17 +29,25 @@ export function logEvent(
   payload?: {
     wallet?: string | null;
     modelId?: number | null;
+    priority?: Priority;
     [key: string]: any;
   }
 ) {
+  // ── High-Frequency Event Sampling ──────────────────────────────────────────
+  // Only log 30% of rpc_call and rpc_error events to prevent DB bloat.
+  if (["rpc_call", "rpc_error"].includes(eventName)) {
+    if (Math.random() > 0.3) return;
+  }
+
   // Extract top-level known fields, dump the rest into `context`
-  const { wallet, modelId, ...context } = payload || {};
+  const { wallet, modelId, priority = "normal", ...context } = payload || {};
 
   const body: AnalyticsEvent = {
     event: eventName,
     wallet,
     modelId,
     session_id: sessionId,
+    priority,
     context: Object.keys(context).length > 0 ? context : undefined,
   };
 

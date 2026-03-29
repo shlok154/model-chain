@@ -18,6 +18,7 @@ const UploadPage      = lazy(() => import("./pages/UploadPage"));
 const WalletPage      = lazy(() => import("./pages/WalletPage"));
 const ProfilePage     = lazy(() => import("./pages/ProfilePage"));
 const ModelDetailPage = lazy(() => import("./pages/ModelDetailPage"));
+const InsightsPage    = lazy(() => import("./pages/InsightsPage"));
 const NotFoundPage    = lazy(() => import("./pages/NotFoundPage"));
 
 /** Inline skeleton shown while a lazy page chunk is downloading. */
@@ -79,6 +80,7 @@ export default function App() {
                   <Route path="/wallet"    element={<S><WalletPage /></S>} />
                   <Route path="/profile"   element={<S><ProfilePage /></S>} />
                   <Route path="/model/:id" element={<S><ModelDetailPage /></S>} />
+                  <Route path="/insights"  element={<S><InsightsPage /></S>} />
                   <Route path="*"          element={<S><NotFoundPage /></S>} />
                 </Routes>
               </main>

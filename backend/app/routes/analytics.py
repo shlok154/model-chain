@@ -34,6 +34,7 @@ def get_service_supabase(settings: Settings = Depends(get_settings)) -> Client:
 class LogEventSchema(BaseModel):
     event: str = Field(..., max_length=100)
     session_id: str = Field(..., max_length=50)
+    priority: str = Field("normal", max_length=20)
     wallet: str | None = Field(None, max_length=42)
     modelId: int | None = None
     context: dict | None = None
@@ -46,6 +47,7 @@ def _insert_event_sync(supa: Client, event_data: dict, ip: str):
     payload = {
         "event": event_data["event"],
         "session_id": event_data["session_id"],
+        "priority": event_data.get("priority", "normal"),
         "wallet_address": event_data.get("wallet"),
         "model_id": event_data.get("modelId"),
         "context": event_data.get("context", {}),
@@ -59,9 +61,10 @@ async def _sink_event(supa: Client, event_data: dict, ip: str):
     """
     Safely sink telemetry to database. 
     Drops events if pipeline is fully saturated protecting the application loop.
+    'critical' priority events bypass the immediate drop check.
     """
-    if _telemetry_semaphore.locked():
-        # High traffic mode: drop low-priority logs to prioritize core business logic
+    if _telemetry_semaphore.locked() and event_data.get("priority") != "critical":
+        # Drop non-critical logs under load
         return
 
     async with _telemetry_semaphore:
@@ -93,6 +96,118 @@ async def log_client_event(
 
     asyncio.create_task(_sink_event(supabase, event_dict, client_ip))
     return {"status": "accepted"}
+
+
+@router.get("/telemetry-summary")
+async def telemetry_summary(
+    wallet: str = Depends(get_current_wallet),
+    supabase: Client = Depends(get_service_supabase),
+):
+    """
+    Aggregated telemetry insights scoped to the authenticated wallet.
+    Returns conversion funnel, failure breakdown, and RPC health — all in one call.
+    Uses SQL-level aggregation for performance.
+    """
+    if not wallet:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    cache_key = f"analytics:telemetry:{wallet}"
+    if cached := await cache_get(cache_key):
+        return cached
+
+    # ── Conversion funnel ─────────────────────────────────────────────────────
+    funnel_events = [
+        "wallet_connect_clicked", "signature_requested",
+        "tx_initiated", "tx_submitted", "tx_confirmed", "download_requested"
+    ]
+    funnel_res = supabase.table("telemetry_logs").select(
+        "event"
+    ).in_("event", funnel_events).execute()
+
+    funnel_counts: dict[str, int] = {e: 0 for e in funnel_events}
+    for row in (funnel_res.data or []):
+        ev = row["event"]
+        if ev in funnel_counts:
+            funnel_counts[ev] += 1
+
+    conversion_funnel = {
+        "viewed": funnel_counts.get("wallet_connect_clicked", 0),
+        "clicked": funnel_counts.get("signature_requested", 0),
+        "purchased": funnel_counts.get("tx_confirmed", 0),
+        "downloaded": funnel_counts.get("download_requested", 0),
+    }
+
+    # ── Failure reasons ───────────────────────────────────────────────────────
+    fail_res = supabase.table("telemetry_logs").select(
+        "context"
+    ).eq("event", "tx_failed").execute()
+
+    reason_counts: dict[str, int] = {}
+    for row in (fail_res.data or []):
+        ctx = row.get("context") or {}
+        reason = ctx.get("errorMessage", "unknown")
+        # Normalize common messages for cleaner grouping
+        if "rejected" in reason.lower() or "4001" in str(ctx.get("errorCode", "")):
+            reason = "User rejected transaction"
+        elif "insufficient" in reason.lower():
+            reason = "Insufficient funds"
+        elif "timeout" in reason.lower():
+            reason = "RPC timeout"
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+    failure_reasons = sorted(
+        [{"reason": r, "count": c} for r, c in reason_counts.items()],
+        key=lambda x: x["count"], reverse=True
+    )[:10]
+
+    # ── RPC health ────────────────────────────────────────────────────────────
+    rpc_res = supabase.table("telemetry_logs").select(
+        "event, context"
+    ).in_("event", ["rpc_call", "rpc_error"]).execute()
+
+    total_rpc = 0
+    rpc_errors = 0
+    latencies: list[float] = []
+    for row in (rpc_res.data or []):
+        total_rpc += 1
+        if row["event"] == "rpc_error":
+            rpc_errors += 1
+        ctx = row.get("context") or {}
+        if "latency_ms" in ctx:
+            try:
+                latencies.append(float(ctx["latency_ms"]))
+            except (ValueError, TypeError):
+                pass
+
+    rpc_health = {
+        "total_calls": total_rpc,
+        "errors": rpc_errors,
+        "success_rate": round((total_rpc - rpc_errors) / total_rpc * 100, 1) if total_rpc > 0 else 100,
+        "avg_latency_ms": round(sum(latencies) / len(latencies), 1) if latencies else 0,
+    }
+
+    # ── Success / failure rate (tx lifecycle) ─────────────────────────────────
+    tx_success_res = supabase.table("telemetry_logs").select(
+        "id", count="exact"
+    ).eq("event", "tx_confirmed").execute()
+    tx_fail_res = supabase.table("telemetry_logs").select(
+        "id", count="exact"
+    ).eq("event", "tx_failed").execute()
+
+    tx_ok = tx_success_res.count or 0
+    tx_fail = tx_fail_res.count or 0
+    tx_total = tx_ok + tx_fail
+
+    response = {
+        "conversion_funnel": conversion_funnel,
+        "failure_reasons": failure_reasons,
+        "rpc_health": rpc_health,
+        "tx_success_rate": round(tx_ok / tx_total * 100, 1) if tx_total > 0 else 100,
+        "tx_failure_rate": round(tx_fail / tx_total * 100, 1) if tx_total > 0 else 0,
+        "tx_total": tx_total,
+    }
+    await cache_set(cache_key, response, ttl=30)
+    return response
 
 
 @router.get("/dashboard")

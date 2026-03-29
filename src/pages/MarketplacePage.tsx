@@ -157,7 +157,7 @@ export default function MarketplacePage() {
                 <span className="model-category">{model.category}</span>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   {owns(model.id) ? (
-                    <span className="escrow-badge escrow-badge--released" style={{ fontSize: 10, padding: "2px 8px" }} title="You already own this model">Owned ✅</span>
+                    <span className="trust-badge" style={{ fontSize: 10, padding: "2px 8px", background: "rgba(34, 211, 160, 0.1)", border: "1px solid rgba(34, 211, 160, 0.2)", color: "var(--green)", borderRadius: 4, fontWeight: 600 }} title="Verified on-chain ownership">✔ Verified</span>
                   ) : (
                     <span className="chain-badge" style={{ fontSize: 10, padding: "2px 8px" }}>🔒 Locked</span>
                   )}

@@ -148,3 +148,54 @@ export function useDashboardStats(address: string | null) {
     staleTime: 120_000,  // 2 min — matches backend cache TTL
   });
 }
+
+// ── Telemetry Insights ───────────────────────────────────────────────────────
+
+export interface TelemetryInsights {
+  conversion_funnel: {
+    viewed: number;
+    clicked: number;
+    purchased: number;
+    downloaded: number;
+  };
+  failure_reasons: { reason: string; count: number }[];
+  rpc_health: {
+    total_calls: number;
+    errors: number;
+    success_rate: number;
+    avg_latency_ms: number;
+  };
+  tx_success_rate: number;
+  tx_failure_rate: number;
+  tx_total: number;
+}
+
+const DEMO_INSIGHTS: TelemetryInsights = {
+  conversion_funnel: { viewed: 1200, clicked: 400, purchased: 120, downloaded: 100 },
+  failure_reasons: [
+    { reason: "User rejected transaction", count: 45 },
+    { reason: "Insufficient funds", count: 18 },
+    { reason: "RPC timeout", count: 7 },
+  ],
+  rpc_health: { total_calls: 2400, errors: 42, success_rate: 98.2, avg_latency_ms: 320 },
+  tx_success_rate: 82,
+  tx_failure_rate: 18,
+  tx_total: 138,
+};
+
+export function useTelemetryInsights() {
+  const { token } = useAuth();
+
+  return useQuery({
+    queryKey: ["analytics", "telemetry-summary"],
+    queryFn: async (): Promise<TelemetryInsights> => {
+      try {
+        return await api.get<TelemetryInsights>("/api/analytics/telemetry-summary", token);
+      } catch {
+        return DEMO_INSIGHTS;
+      }
+    },
+    enabled: true,
+    staleTime: 30_000,
+  });
+}

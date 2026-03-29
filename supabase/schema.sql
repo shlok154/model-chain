@@ -355,6 +355,7 @@ create table if not exists public.telemetry_logs (
   wallet_address text,
   model_id integer,
   session_id text,
+  priority text default 'normal',
   context jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );

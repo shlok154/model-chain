@@ -649,6 +649,11 @@ button, a, input, textarea, select, .model-card {
   align-items: start;
 }
 
+.detail-sidebar {
+  position: sticky;
+  top: 24px;
+}
+
 .detail-header { margin-bottom: 24px; }
 
 .detail-title {
@@ -2194,4 +2199,68 @@ button, a, input, textarea, select, .model-card {
   .period-stat { min-width: 100px; padding-right: 12px; }
   .period-divider { margin-right: 12px; }
   .period-value { font-size: 18px; }
+}
+
+/* ============================================
+   PERFORMANCE TABLE
+============================================ */
+.perf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.perf-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.perf-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+}
+
+.perf-table__row {
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.perf-table__row:hover {
+  background: var(--bg-2);
+}
+
+/* ============================================
+   CARD SUBTITLE
+============================================ */
+.card-subtitle {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 4px;
+  font-weight: 400;
+}
+
+/* ============================================
+   DASHBOARD GRID SPACING
+============================================ */
+.dashboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* ============================================
+   EMPTY STATE UTILITY
+============================================ */
+.empty-state {
+  color: var(--text-3);
+  font-size: 14px;
+  padding: 24px 0;
+  text-align: center;
 }
