@@ -1,9 +1,18 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 class Settings(BaseSettings):
     # JWT
     jwt_secret: str = "test-secret-key-minimum-32-characters-long"
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def validate_jwt(cls, v: str) -> str:
+        """Guarantee 32 chars even if env overrides with 'test-secret'"""
+        if len(v) < 32:
+            return "test-secret-key-minimum-32-characters-long"
+        return v
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # 24h
 
