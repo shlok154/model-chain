@@ -64,10 +64,11 @@ export function useMarketplace() {
         const contract = getSignedContract();
         const tx = await contract.purchaseModel(modelId, { value: priceWei });
         const receipt = await tx.wait();
-        // Invalidate ownership cache so UI instantly reflects the new owned state.
-        // The long 5-min staleTime + markOwned() handle the optimistic path;
-        // this ensures the server-authoritative value is refreshed too.
+        // Invalidate both ownership and model list caches after a confirmed purchase.
+        // Ownership: so "Owned ✅" badge appears immediately everywhere.
+        // Models list: so the purchases count on marketplace cards updates.
         qc.invalidateQueries({ queryKey: ["ownership", address ?? ""] });
+        qc.invalidateQueries({ queryKey: ["models"] });
         return { hash: receipt.hash, status: "confirmed", error: null };
       } catch (err: any) {
         const msg = err.reason ?? err.message ?? "Transaction failed";
@@ -130,7 +131,8 @@ export function useMarketplace() {
           params.royaltyPercent
         );
         const receipt = await tx.wait();
-        // The backend event listener records the listed model asynchronously.
+        // Invalidate model list so the new model appears immediately.
+        qc.invalidateQueries({ queryKey: ["models"] });
         return { hash: receipt.hash, status: "confirmed", error: null };
       } catch (err: any) {
         return {

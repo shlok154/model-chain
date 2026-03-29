@@ -11,8 +11,7 @@ import Footer from "./components/Footer";
 // Marketplace loads eagerly (landing page — LCP target)
 import MarketplacePage from "./pages/MarketplacePage";
 
-// All other pages are lazy-loaded — each becomes a separate JS chunk so the
-// initial bundle shrinks dramatically (important for LCP and mobile TTI).
+// All other pages are lazy-loaded — each becomes a separate JS chunk.
 const DashboardPage   = lazy(() => import("./pages/DashboardPage"));
 const UploadPage      = lazy(() => import("./pages/UploadPage"));
 const WalletPage      = lazy(() => import("./pages/WalletPage"));
@@ -20,7 +19,7 @@ const ProfilePage     = lazy(() => import("./pages/ProfilePage"));
 const ModelDetailPage = lazy(() => import("./pages/ModelDetailPage"));
 const NotFoundPage    = lazy(() => import("./pages/NotFoundPage"));
 
-/** Shown while a lazy page chunk is being fetched. Uses existing shimmer CSS. */
+/** Inline skeleton shown while a lazy page chunk is downloading. */
 function PageSkeleton() {
   return (
     <div className="page" style={{ paddingTop: 40 }}>
@@ -35,6 +34,15 @@ function PageSkeleton() {
       </div>
     </div>
   );
+}
+
+/**
+ * Wrap each lazy route in its OWN Suspense so only the switching page
+ * shows a skeleton — the sidebar, header, and footer are never suspended.
+ * A single global Suspense around <Routes> would blank the whole shell.
+ */
+function S({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<PageSkeleton />}>{children}</Suspense>;
 }
 
 export default function App() {
@@ -57,17 +65,17 @@ export default function App() {
                 <span className="mobile-logo">⬡ ModelChain</span>
               </header>
               <main className="app-main">
-                <Suspense fallback={<PageSkeleton />}>
-                  <Routes>
-                    <Route path="/"          element={<MarketplacePage />} />
-                    <Route path="/dashboard" element={<DashboardPage />} />
-                    <Route path="/upload"    element={<UploadPage />} />
-                    <Route path="/wallet"    element={<WalletPage />} />
-                    <Route path="/profile"   element={<ProfilePage />} />
-                    <Route path="/model/:id" element={<ModelDetailPage />} />
-                    <Route path="*"          element={<NotFoundPage />} />
-                  </Routes>
-                </Suspense>
+                {/* Each lazy route has its own Suspense boundary so only the
+                    transitioning page suspends — never the whole shell. */}
+                <Routes>
+                  <Route path="/"          element={<MarketplacePage />} />
+                  <Route path="/dashboard" element={<S><DashboardPage /></S>} />
+                  <Route path="/upload"    element={<S><UploadPage /></S>} />
+                  <Route path="/wallet"    element={<S><WalletPage /></S>} />
+                  <Route path="/profile"   element={<S><ProfilePage /></S>} />
+                  <Route path="/model/:id" element={<S><ModelDetailPage /></S>} />
+                  <Route path="*"          element={<S><NotFoundPage /></S>} />
+                </Routes>
               </main>
               <Footer />
             </div>

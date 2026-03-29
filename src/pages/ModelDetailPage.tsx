@@ -174,6 +174,16 @@ export default function ModelDetailPage() {
         {/* ── Left: model info ───────────────────────────────────── */}
         <div className="detail-main">
           <div className="detail-header">
+            <div className="detail-thumbnail">
+              <img
+                src={`https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(model.name)}&backgroundColor=080a0f&size=160`}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                width="160"
+                height="160"
+              />
+            </div>
             <span className="model-category">{model.category}</span>
             <h1 className="detail-title">{model.name}</h1>
             {/* Phase 4: average rating display */}

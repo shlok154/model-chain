@@ -130,6 +130,16 @@ export default function MarketplacePage() {
             <div className="empty-state">No models found matching your filters.</div>
           ) : models.map((model) => (
             <div key={model.id} className={`model-card ${owns(model.id) ? "model-card--owned" : ""}`} onClick={() => navigate(`/model/${model.id}`)}>
+              <div className="model-thumbnail">
+                <img
+                  src={`https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(model.name)}&backgroundColor=080a0f&size=64`}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  width="64"
+                  height="64"
+                />
+              </div>
               <div className="model-card-top">
                 <span className="model-category">{model.category}</span>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
