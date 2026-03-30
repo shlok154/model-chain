@@ -60,7 +60,7 @@ export default function InsightsPage() {
             <div className="skeleton h-[280px] rounded-3xl" />
           ) : (
             <div className="space-y-8">
-              <div className="h-[280px]">
+              <div style={{ width: "100%", height: 280 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={funnelData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
                     <defs>
@@ -230,7 +230,7 @@ export default function InsightsPage() {
           {isLoading ? (
             <div className="skeleton h-[140px] rounded-3xl" />
           ) : insights && insights.failure_reasons.length > 0 ? (
-            <div className="h-[240px]">
+            <div style={{ width: "100%", height: 240 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={insights.failure_reasons} layout="vertical" margin={{ top: 10, right: 30, left: 20, bottom: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />

@@ -209,3 +209,24 @@ async def get_reviews(model_id: int, supabase: Client = Depends(get_service_supa
     ).eq("model_id", model_id).order("created_at", desc=True).execute()
     await cache_set(cache_key, result.data, ttl=60)
     return result.data
+
+@router.get("/{model_id}/related")
+async def get_related_models(model_id: int, supabase: Client = Depends(get_service_supabase)):
+    cache_key = f"models:related:{model_id}"
+    if cached := await cache_get(cache_key):
+        return cached
+
+    current_model = supabase.table("models").select("category").eq("id", model_id).maybe_single().execute()
+    if not current_model.data:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    category = current_model.data["category"]
+
+    result = supabase.table("models").select(
+        "id, name, description, price_eth, category, purchases, creator_address, ipfs_hash, version, license, royalty_percent"
+    ).eq("category", category).neq("id", model_id).order("purchases", desc=True).limit(5).execute()
+
+    response = {"data": result.data or []}
+    await cache_set(cache_key, response, ttl=120)
+    
+    return response

@@ -52,6 +52,22 @@ export default function DashboardPage() {
   const [isWithdrawing,  setIsWithdrawing]  = useState(false);
   const [chartView,      setChartView]      = useState<"30D" | "7D">("30D");
 
+  const BAR_COLORS = [
+    "bg-secondary",
+    "bg-primary-container",
+    "bg-secondary-container",
+    "bg-tertiary",
+    "bg-outline",
+  ];
+
+  const DOT_COLORS = [
+    "bg-secondary",
+    "bg-primary-container",
+    "bg-secondary-container",
+    "bg-tertiary",
+    "bg-outline",
+  ];
+
   const chartData = chartView === "7D"
     ? (stats?.weekly_revenue_mtd ?? []).map(d => ({ ...d, month: d.week }))
     : (stats?.monthly_revenue ?? []);
@@ -218,7 +234,7 @@ export default function DashboardPage() {
           {isLoading ? (
             <div className="skeleton h-64 rounded-xl" />
           ) : (
-            <div className="h-64">
+            <div style={{ width: "100%", height: 256 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
                   <defs>
@@ -288,6 +304,55 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ── REVENUE DISTRIBUTION ── */}
+      {isLoading ? (
+        <div className="skeleton h-32 rounded-3xl" />
+      ) : stats?.top_models?.length ? (
+        <div className="space-y-6">
+          <h3 className="font-label text-xs uppercase tracking-widest">
+            Revenue Distribution
+          </h3>
+
+          <div className="glass-card rounded-3xl p-8 space-y-6">
+            {/* Visual bar */}
+            <div className="flex h-3 w-full rounded-full overflow-hidden gap-px">
+              {stats.top_models.map((m, i) => (
+                <div
+                  key={m.id}
+                  style={{ width: `${m.revenue_share_pct ?? 0}%` }}
+                  className={`h-full transition-all duration-700 ${BAR_COLORS[i % BAR_COLORS.length]}`}
+                  title={`${m.name}: ${m.revenue_share_pct}%`}
+                />
+              ))}
+            </div>
+
+            {/* Legend rows — one per model */}
+            <div className="space-y-3">
+              {stats.top_models.map((m, i) => (
+                <div key={m.id} className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${DOT_COLORS[i % DOT_COLORS.length]}`}
+                    />
+                    <span className="font-label text-xs uppercase tracking-tight truncate">
+                      {m.name}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 flex-shrink-0">
+                    <span className="font-label text-[10px] text-on-surface-variant uppercase">
+                      {m.revenue} ETH
+                    </span>
+                    <span className="font-label text-xs font-bold text-secondary w-12 text-right">
+                      {(m.revenue_share_pct ?? 0).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* ── BOTTOM SECTION ── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-12">
@@ -365,7 +430,7 @@ export default function DashboardPage() {
           <div>
             <h3 className="font-label text-xs uppercase tracking-widest mb-4">Failure Distribution</h3>
             {insights && insights.failure_reasons.length > 0 ? (
-              <div className="h-40">
+              <div style={{ width: "100%", height: 160 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={insights.failure_reasons} layout="vertical">
                     <XAxis type="number" hide />

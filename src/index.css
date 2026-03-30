@@ -1,6 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
 
 /* ══════════════════════════════════════════════════════════════
    NEURAL CHIP DESIGN SYSTEM — Global Utilities
@@ -334,8 +334,6 @@ input, textarea, select { font-family: inherit; }
 }
 
 /* Page transitions wrapper */
-.page-transition {
-}
 
 /* Base Glass utility */
 .glass-effect {

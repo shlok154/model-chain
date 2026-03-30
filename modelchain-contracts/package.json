@@ -2,7 +2,6 @@
   "name": "modelchain-contracts",
   "version": "2.0.0",
   "description": "ModelChain smart contracts v2",
-  "type": "module",
   "scripts": {
     "compile": "hardhat compile",
     "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",

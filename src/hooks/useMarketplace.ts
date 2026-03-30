@@ -10,8 +10,9 @@
  */
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ethers } from "ethers";
+import { ethers, BrowserProvider } from "ethers";
 import { useWallet } from "../context/WalletContext";
+import { useEthersSigner, useEthersProvider } from "../lib/wagmiAdapters";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import { logEvent } from "../lib/analytics";
@@ -28,12 +29,14 @@ export function isContractDeployed() {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useMarketplace() {
-  const { signer, provider, address } = useWallet();
+  const { address } = useWallet();
+  const signer      = useEthersSigner();
+  const provider    = useEthersProvider();
   const { token } = useAuth();
   const qc = useQueryClient();
 
   const getContract = useCallback(
-    (signerOrProvider?: ethers.Signer | ethers.Provider) =>
+    (signerOrProvider?: ethers.Signer | ethers.Provider | BrowserProvider) =>
       new ethers.Contract(
         MARKETPLACE_ADDRESS,
         MARKETPLACE_ABI,

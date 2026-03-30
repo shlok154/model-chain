@@ -15,6 +15,7 @@ export const modelKeys = {
   list:    (params: object) => ["models", "list", params] as const,
   detail:  (id: number)     => ["models", "detail", id] as const,
   reviews: (id: number)     => ["models", "reviews", id] as const,
+  related: (id: number)     => ["models", "related", id] as const,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -158,5 +159,24 @@ export function useSubmitReview(modelId: number) {
       qc.invalidateQueries({ queryKey: modelKeys.detail(modelId) });
       qc.invalidateQueries({ queryKey: modelKeys.all });
     },
+  });
+}
+
+export function useRelatedModels(modelId: number) {
+  const { token } = useAuth();
+  return useQuery({
+    queryKey: modelKeys.related(modelId),
+    queryFn: async () => {
+      try {
+        const result = await api.get<{ data: any[] }>(
+          `/api/models/${modelId}/related`, token
+        );
+        return (result?.data ?? []).map(rowToModel);
+      } catch {
+        return [];
+      }
+    },
+    enabled: modelId > 0,
+    staleTime: 2 * 60_000,
   });
 }

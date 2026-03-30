@@ -14,13 +14,28 @@ class Settings(BaseSettings):
 
     # Blockchain
     alchemy_sepolia_url: str = "http://localhost"
-    marketplace_address: str = "0x3131f5ea556cbeBe3A09F3AB42EDb8F3C630240D"
+    marketplace_address: str = "0x0000000000000000000000000000000000000000"
+
+    # Multi-chain support
+    target_chain_id: int = 11155111          # 1 = Mainnet, 11155111 = Sepolia
+    mainnet_rpc_url: str = ""               # e.g. https://mainnet.infura.io/v3/KEY
+    sepolia_rpc_url: str = ""               # e.g. https://sepolia.infura.io/v3/KEY
+    contract_address: str = ""              # set after mainnet deploy
+
+    @property
+    def rpc_url(self) -> str:
+        """Return the RPC URL for the configured target chain."""
+        if self.target_chain_id == 1:
+            return self.mainnet_rpc_url or self.alchemy_sepolia_url  # fallback for dev
+        # Sepolia: prefer sepolia_rpc_url, fall back to legacy alchemy_sepolia_url
+        return self.sepolia_rpc_url or self.alchemy_sepolia_url
 
     # Redis
     redis_url: str = "redis://localhost:6379"
 
     # Pinata
     pinata_jwt: str = ""
+    ipfs_gateway_url: str = "https://gateway.pinata.cloud"
 
     # Admin wallets — comma-separated list of wallet addresses with admin role
     # e.g. ADMIN_WALLETS=0xabc...,0xdef...

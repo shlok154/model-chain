@@ -66,8 +66,15 @@ export const MARKETPLACE_ABI = [
   "function withdrawPlatformFees()",
 ];
 
-// ── Deployed address — update after redeploying v2 ──────────────────────────
-export const MARKETPLACE_ADDRESS: string = "0x3131f5ea556cbeBe3A09F3AB42EDb8F3C630240D";
+// ── Deployed address — set via VITE_CONTRACT_ADDRESS env var ─────────────────
+const _addr = import.meta.env.VITE_CONTRACT_ADDRESS;
+console.log("ENV CHECK:", import.meta.env.VITE_CONTRACT_ADDRESS);
+if (!_addr || _addr === "0xPLACEHOLDER") {
+  throw new Error(
+    "VITE_CONTRACT_ADDRESS is not set. Deploy the contract and set this env var."
+  );
+}
+export const MARKETPLACE_ADDRESS: string = _addr;
 
 export const SUPPORTED_CHAINS: Record<number, string> = {
   1:        "Ethereum Mainnet",

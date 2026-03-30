@@ -164,7 +164,7 @@ async def download_from_ipfs(
             t0 = time.time()
             try:
                 await emit_telemetry("rpc_call", method="hasAccess", provider="alchemy")
-                w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(settings.alchemy_sepolia_url))
+                w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(settings.rpc_url))
                 w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
                 
                 ACCESS_ABI = [{
@@ -240,7 +240,7 @@ async def download_from_ipfs(
 
     # Stream from Pinata gateway — raw IPFS URL is never exposed to the client.
     # Using an async generator and 'async with' ensures httpx closes the connection properly.
-    gateway_url = f"https://gateway.pinata.cloud/ipfs/{ipfs_hash}"
+    gateway_url = f"{settings.ipfs_gateway_url.rstrip('/')}/ipfs/{ipfs_hash}"
 
     async def _stream_body():
         bytes_sent = 0

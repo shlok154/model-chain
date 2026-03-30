@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useModels, type ModelListParams } from "../hooks/useModels";
 import { useOwnership } from "../hooks/useOwnership";
 import NeuralChip from "../components/NeuralChip";
@@ -21,7 +21,9 @@ export default function MarketplacePage() {
       staleTime: 60_000,
     });
   };
-  const [search,   setSearch]   = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [search,   setSearch]   = useState(searchParams.get("q") || "");
+  const [debouncedSearch, setDB] = useState(searchParams.get("q") || "");
   const [category, setCategory] = useState("All");
   const [page,     setPage]     = useState(0);
   const [minPrice, setMinPrice] = useState("");
@@ -29,10 +31,30 @@ export default function MarketplacePage() {
   const [sortBy,   setSortBy]   = useState<"created_at" | "price_eth" | "purchases">("created_at");
   const [ownershipFilter, setOwnershipFilter] = useState<"all" | "owned" | "unowned">("all");
 
+  useEffect(() => {
+    const t = setTimeout(() => setDB(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (debouncedSearch) {
+          next.set("q", debouncedSearch);
+        } else {
+          next.delete("q");
+        }
+        return next;
+      },
+      { replace: true }
+    );
+  }, [debouncedSearch, setSearchParams]);
+
   const params: ModelListParams = {
     page, limit: PAGE_SIZE,
     ...(category !== "All" && { category }),
-    ...(search    && { search }),
+    ...(debouncedSearch && { search: debouncedSearch }),
     ...(minPrice  && { min_price: parseFloat(minPrice) }),
     ...(maxPrice  && { max_price: parseFloat(maxPrice) }),
     sort_by: sortBy,
@@ -216,8 +238,34 @@ export default function MarketplacePage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-stagger">
               {models.length === 0 ? (
-                <div className="col-span-full py-20 text-center font-label text-xs uppercase tracking-widest text-on-surface-variant border border-dashed border-outline-variant/20 rounded-2xl">
-                  No matches found for current filters
+                <div className="col-span-full py-20 flex flex-col items-center justify-center text-center border border-dashed border-outline-variant/20 rounded-2xl">
+                  {debouncedSearch ? (
+                    <>
+                      <span className="material-symbols-outlined text-4xl text-on-surface-variant/50 mb-4">search</span>
+                      <h3 className="font-label text-sm uppercase tracking-widest text-on-surface-variant mb-2">
+                        No results for "{debouncedSearch}"
+                      </h3>
+                      <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60 mb-6">
+                        Try a broader term, or browse by category
+                      </p>
+                      <button
+                        onClick={() => { setSearch(""); setDB(""); setPage(0); }}
+                        className="font-label text-[10px] uppercase tracking-widest text-secondary border border-secondary/30 px-6 py-2 rounded-full hover:bg-secondary/10 transition-colors"
+                      >
+                        Clear search
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-4xl text-on-surface-variant/50 mb-4">◎</span>
+                      <h3 className="font-label text-sm uppercase tracking-widest text-on-surface-variant mb-2">
+                        No models match these filters
+                      </h3>
+                      <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/60">
+                        Try adjusting the category or price range
+                      </p>
+                    </>
+                  )}
                 </div>
               ) : models.map((model) => (
                 <div

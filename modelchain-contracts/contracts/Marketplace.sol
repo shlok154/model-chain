@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 // Phase 2: OpenZeppelin security primitives
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
 
 /**
  * @title ModelChainMarketplace v2
@@ -104,7 +104,7 @@ contract ModelChainMarketplace is ReentrancyGuard, Ownable, Pausable {
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
-    constructor() Ownable(msg.sender) {}
+    constructor() Ownable() {}
 
     // ── Model Management ─────────────────────────────────────────────────────
 

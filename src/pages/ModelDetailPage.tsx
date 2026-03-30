@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useModel, useModelReviews, useSubmitReview } from "../hooks/useModels";
+import { useModel, useModelReviews, useSubmitReview, useRelatedModels } from "../hooks/useModels";
 import { useOwnership } from "../hooks/useOwnership";
 import { useMarketplace } from "../hooks/useMarketplace";
 import { useWallet } from "../context/WalletContext";
@@ -43,6 +43,7 @@ export default function ModelDetailPage() {
   const { data: model, isLoading, isError } = useModel(modelId);
   const { data: reviews = [] }              = useModelReviews(modelId);
   const submitReview                        = useSubmitReview(modelId);
+  const { data: relatedModels = [] }        = useRelatedModels(modelId);
 
   const { purchaseModel, checkAccess }     = useMarketplace();
   const { address, connect }              = useWallet();
@@ -174,6 +175,7 @@ export default function ModelDetailPage() {
     );
   }
 
+  const creatorAddress = typeof model.creator === "string" ? model.creator : (model.creator as any)?.wallet ?? "Unknown";
   const avgRating   = (model as any).avg_rating ?? null;
   const reviewCount = (model as any).review_count ?? reviews.length;
 
@@ -216,7 +218,7 @@ export default function ModelDetailPage() {
                 <div className="flex flex-wrap items-center gap-3">
                   <NeuralChip label={model.category.toUpperCase()} />
                   <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">
-                    by <span className="text-secondary">{model.creator.slice(0, 8)}...{model.creator.slice(-6)}</span>
+                    by <span className="text-secondary">{creatorAddress.slice(0, 8)}...{creatorAddress.slice(-6)}</span>
                   </span>
                 </div>
 
@@ -270,7 +272,7 @@ export default function ModelDetailPage() {
                 <div className="md:text-right">
                   <span className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest block mb-2">CREATOR AUTHORITY</span>
                   <p className="font-label text-xs text-on-surface-variant max-w-[240px] truncate">
-                    {model.creator}
+                    {creatorAddress}
                   </p>
                 </div>
               </div>
@@ -349,6 +351,35 @@ export default function ModelDetailPage() {
               ))}
             </div>
           </div>
+
+          {relatedModels.length > 0 && (
+            <div className="space-y-6 pt-10">
+              <div className="neural-divider" />
+              <h3 className="font-syne font-bold text-2xl tracking-tighter uppercase">
+                You May Also Like
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {relatedModels.map((m) => (
+                  <div
+                    key={m.id}
+                    className="glass-card rounded-2xl p-5 cursor-pointer hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(189,157,255,0.10)] transition-all duration-200"
+                    onClick={() => navigate(`/model/${m.id}`)}
+                  >
+                    <NeuralChip label={m.category.toUpperCase()} />
+                    <h4 className="font-syne font-bold text-base tracking-tight mt-3 mb-1 truncate">
+                      {m.name}
+                    </h4>
+                    <p className="font-body text-xs text-on-surface-variant line-clamp-2 leading-relaxed mb-3">
+                      {m.description}
+                    </p>
+                    <span className="font-label text-secondary font-bold text-sm">
+                      {m.price} <span className="text-on-surface-variant">ETH</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── PURCHASE SIDEBAR ── */}

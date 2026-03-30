@@ -144,8 +144,8 @@ export function useDashboardStats(address: string | null) {
 
       return DEMO_STATS;
     },
-    enabled: true,
-    staleTime: 120_000,  // 2 min — matches backend cache TTL
+    enabled: !!address,
+    staleTime: 60_000 * 5, // 5 mins
   });
 }
 

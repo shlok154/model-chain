@@ -52,10 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { token: null, role: null, isAuthenticated: false, isSigning: false, authError: null };
   });
 
-  // If wallet disconnects, sign out
-  useEffect(() => {
-    if (!address && state.isAuthenticated) signOut();
-  }, [address]);
+
 
   const signIn = useCallback(async () => {
     if (!address || !provider) return;
@@ -131,6 +128,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     headers.set("Content-Type", headers.get("Content-Type") ?? "application/json");
     return fetch(url, { ...init, headers });
   }, [state.token]);
+
+  // If wallet disconnects, sign out
+  useEffect(() => {
+    if (!address && state.isAuthenticated) signOut();
+  }, [address, state.isAuthenticated, signOut]);
 
   return (
     <AuthContext.Provider value={{ ...state, signIn, signOut, becomeCreator, authFetch }}>

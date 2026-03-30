@@ -11,7 +11,9 @@ const navLinks = [
 
 export default function Sidebar() {
   const location   = useLocation();
-  const { address, connect, isConnecting } = useWallet();
+  const { address, connect, isConnecting, wrongNetwork } = useWallet();
+
+  const targetChainLabel = Number(import.meta.env.VITE_TARGET_CHAIN) === 1 ? "Mainnet" : "Sepolia";
 
   // Data ticker uses marketplace data keyed to most popular models
   const { data } = useModels({ sort_by: "purchases", limit: 10 });
@@ -100,6 +102,16 @@ export default function Sidebar() {
           </button>
         )}
       </header>
+
+      {/* ── WRONG NETWORK BANNER ───────────────────────────────── */}
+      {wrongNetwork && (
+        <div className="fixed top-16 left-0 w-full z-40 flex items-center justify-center gap-2 bg-amber-500/90 backdrop-blur-sm px-4 py-2">
+          <span className="material-symbols-outlined text-sm text-black">warning</span>
+          <span className="font-label text-xs uppercase tracking-widest text-black font-bold">
+            Wrong network — switch to {targetChainLabel}
+          </span>
+        </div>
+      )}
 
       {/* ── MOBILE BOTTOM NAV (< md, sits above ticker) ──────── */}
       <div className="md:hidden fixed bottom-10 left-0 w-full h-16 z-40 bg-slate-950/80 backdrop-blur-md border-t border-white/5 flex items-center justify-around" style={{ zIndex: 45 }}>

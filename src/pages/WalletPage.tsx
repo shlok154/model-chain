@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ethers } from "ethers";
 import { useWallet } from "../context/WalletContext";
 import { useAuth } from "../context/AuthContext";
+import { useEthersSigner } from "../lib/wagmiAdapters";
 import { useEthPrice } from "../hooks/useEthPrice";
 import { SUPPORTED_CHAINS, MARKETPLACE_ABI, MARKETPLACE_ADDRESS } from "../contracts/marketplace";
 import { supabase, isSupabaseReady } from "../lib/supabase";
@@ -81,14 +82,13 @@ function useMyPurchases(address: string | null) {
 // ── Confirm delivery mutation ──────────────────────────────────────────────────
 
 function useConfirmDelivery() {
-  const { provider } = useWallet();
+  const signer = useEthersSigner();
   const qc = useQueryClient();
   const { address } = useWallet();
 
   return useMutation({
     mutationFn: async ({ modelId }: { modelId: number }) => {
-      if (!provider) throw new Error("Wallet not connected");
-      const signer    = await provider.getSigner();
+      if (!signer) throw new Error("Wallet not connected");
       const contract  = new ethers.Contract(MARKETPLACE_ADDRESS, MARKETPLACE_ABI, signer);
       const buyerAddr = await signer.getAddress();
       const escrowId  = await contract.buyerEscrow(modelId, buyerAddr);
@@ -120,13 +120,12 @@ function useAdminData(token: string | null, role: string | null) {
 // ── Platform fee withdrawal (owner only) ──────────────────────────────────────
 
 function useWithdrawPlatformFees() {
-  const { provider } = useWallet();
+  const signer = useEthersSigner();
   const qc           = useQueryClient();
 
   return useMutation({
     mutationFn: async () => {
-      if (!provider) throw new Error("Wallet not connected");
-      const signer   = await provider.getSigner();
+      if (!signer) throw new Error("Wallet not connected");
       const contract = new ethers.Contract(MARKETPLACE_ADDRESS, MARKETPLACE_ABI, signer);
       const owner    = await contract.owner();
       const caller   = await signer.getAddress();

@@ -102,9 +102,10 @@ export default function LandingPage() {
               const borderCol  = i % 2 === 0 ? "border-primary-container" : "border-secondary-container";
               const textCol    = i % 2 === 0 ? "text-primary-container" : "text-secondary-container";
               const bgCol      = i % 2 === 0 ? "bg-primary-container/20 text-primary-container" : "bg-secondary-container/20 text-secondary-container";
-              const shortAddr  = typeof model.creator === "string" && model.creator.length > 12
-                ? `${model.creator.slice(0, 5)}...${model.creator.slice(-4)}`
-                : model.creator;
+              const creatorAddress = typeof model.creator === "string" ? model.creator : (model.creator as any)?.wallet ?? "Unknown";
+              const shortAddr  = creatorAddress.length > 12
+                ? `${creatorAddress.slice(0, 5)}...${creatorAddress.slice(-4)}`
+                : creatorAddress;
               return (
                 <div key={model.id} className={`w-[320px] h-[200px] glass-card rounded-2xl p-6 border-t-2 ${borderCol} ${floatClass} ${posClass}`}>
                   <div className="flex justify-between items-start mb-4">
