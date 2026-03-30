@@ -13,6 +13,7 @@ build/
 .env.*.local
 backend/.env
 frontend/.env
+.gemini/
 
 # Logs
 *.log
