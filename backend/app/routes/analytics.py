@@ -15,6 +15,8 @@ Improvements in v5:
 - Buyer retention metric (repeat buyers across models)
 """
 import asyncio
+import json
+import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
@@ -22,6 +24,7 @@ from supabase import create_client, Client
 from ..config import get_settings, Settings
 from ..cache import cache_get, cache_set
 from ..deps import get_current_wallet
+from ..redis_client import get_redis
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -39,48 +42,10 @@ class LogEventSchema(BaseModel):
     modelId: int | None = None
     context: dict | None = None
 
-# Prevent DB connection exhaustion during burst log traffic
-_telemetry_semaphore = asyncio.Semaphore(50)
-
-def _insert_event_sync(supa: Client, event_data: dict, ip: str):
-    """Synchronous Supabase insertion to run in background thread"""
-    payload = {
-        "event": event_data["event"],
-        "session_id": event_data["session_id"],
-        "priority": event_data.get("priority", "normal"),
-        "wallet_address": event_data.get("wallet"),
-        "model_id": event_data.get("modelId"),
-        "context": event_data.get("context", {}),
-    }
-    # Append network context natively
-    payload["context"]["client_ip"] = ip
-    supa.table("telemetry_logs").insert(payload).execute()
-
-
-async def _sink_event(supa: Client, event_data: dict, ip: str):
-    """
-    Safely sink telemetry to database. 
-    Drops events if pipeline is fully saturated protecting the application loop.
-    'critical' priority events bypass the immediate drop check.
-    """
-    if _telemetry_semaphore.locked() and event_data.get("priority") != "critical":
-        # Drop non-critical logs under load
-        return
-
-    async with _telemetry_semaphore:
-        try:
-            # 1.5s timeout: if Supabase RPC hangs, fail gracefully without holding the semaphore forever
-            await asyncio.wait_for(asyncio.to_thread(_insert_event_sync, supa, event_data, ip), timeout=1.5)
-        except Exception as e:
-            # Telemetry is fire-and-forget; never crash backend flow.
-            print(f"[Telemetry Fault] {e}")
-
-
 @router.post("/log")
 async def log_client_event(
     event: LogEventSchema,
     request: Request,
-    supabase: Client = Depends(get_service_supabase),
 ):
     """
     Concurrency-controlled telemetry endpoint. Parses, truncates large
@@ -93,28 +58,48 @@ async def log_client_event(
         event_dict["context"] = {"error": "payload_truncated"}
         
     client_ip = request.client.host if request.client else "unknown"
+    event_dict["context"] = event_dict.get("context") or {}
+    event_dict["context"]["client_ip"] = client_ip
 
-    asyncio.create_task(_sink_event(supabase, event_dict, client_ip))
+    job_id = str(uuid.uuid4())
+    job = {
+        "id": job_id,
+        "original_id": job_id,
+        "type": "telemetry",
+        "queue": "telemetry",
+        "payload": event_dict,
+        "retries": 0,
+        "created_at": datetime.utcnow().isoformat(),
+        "source": "api",
+        "trace": {"created_at": datetime.utcnow().isoformat()}
+    }
+    
+    redis = await get_redis()
+    await redis.lpush("telemetry", json.dumps(job))
+    
     return {"status": "accepted"}
 
+async def _enqueue_rollup(wallet: str, target: str, redis_client) -> None:
+    key = f"analytics:refresh_lock:{wallet}:{target}"
+    acquired = await redis_client.set(key, "1", ex=30, nx=True)
+    if not acquired:
+        return  # deduplicate: job already queued for this wallet
+    job_id = str(uuid.uuid4())
+    job = {
+        "id": job_id,
+        "original_id": job_id,
+        "type": "analytics_rollup",
+        "queue": "analytics_rollup",
+        "payload": {"wallet": wallet, "target": target},
+        "retries": 0,
+        "created_at": datetime.utcnow().isoformat(),
+        "source": "api",
+        "trace": {"created_at": datetime.utcnow().isoformat()}
+    }
+    await redis_client.lpush("analytics_rollup", json.dumps(job))
 
-@router.get("/telemetry-summary")
-async def telemetry_summary(
-    wallet: str = Depends(get_current_wallet),
-    supabase: Client = Depends(get_service_supabase),
-):
-    """
-    Aggregated telemetry insights scoped to the authenticated wallet.
-    Returns conversion funnel, failure breakdown, and RPC health — all in one call.
-    Uses SQL-level aggregation for performance.
-    """
-    if not wallet:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-
-    cache_key = f"analytics:telemetry:{wallet}"
-    if cached := await cache_get(cache_key):
-        return cached
-
+async def compute_telemetry_summary(wallet: str, supabase: Client) -> dict:
+    """Core logic extracted for telemetry summary rollup"""
     # ── Conversion funnel ─────────────────────────────────────────────────────
     funnel_events = [
         "wallet_connect_clicked", "signature_requested",
@@ -122,7 +107,7 @@ async def telemetry_summary(
     ]
     funnel_res = supabase.table("telemetry_logs").select(
         "event"
-    ).in_("event", funnel_events).execute()
+    ).eq("wallet_address", wallet).in_("event", funnel_events).execute()
 
     funnel_counts: dict[str, int] = {e: 0 for e in funnel_events}
     for row in (funnel_res.data or []):
@@ -140,7 +125,7 @@ async def telemetry_summary(
     # ── Failure reasons ───────────────────────────────────────────────────────
     fail_res = supabase.table("telemetry_logs").select(
         "context"
-    ).eq("event", "tx_failed").execute()
+    ).eq("wallet_address", wallet).eq("event", "tx_failed").execute()
 
     reason_counts: dict[str, int] = {}
     for row in (fail_res.data or []):
@@ -163,7 +148,7 @@ async def telemetry_summary(
     # ── RPC health ────────────────────────────────────────────────────────────
     rpc_res = supabase.table("telemetry_logs").select(
         "event, context"
-    ).in_("event", ["rpc_call", "rpc_error"]).execute()
+    ).eq("wallet_address", wallet).in_("event", ["rpc_call", "rpc_error"]).execute()
 
     total_rpc = 0
     rpc_errors = 0
@@ -189,10 +174,10 @@ async def telemetry_summary(
     # ── Success / failure rate (tx lifecycle) ─────────────────────────────────
     tx_success_res = supabase.table("telemetry_logs").select(
         "id", count="exact"
-    ).eq("event", "tx_confirmed").execute()
+    ).eq("wallet_address", wallet).eq("event", "tx_confirmed").execute()
     tx_fail_res = supabase.table("telemetry_logs").select(
         "id", count="exact"
-    ).eq("event", "tx_failed").execute()
+    ).eq("wallet_address", wallet).eq("event", "tx_failed").execute()
 
     tx_ok = tx_success_res.count or 0
     tx_fail = tx_fail_res.count or 0
@@ -206,27 +191,10 @@ async def telemetry_summary(
         "tx_failure_rate": round(tx_fail / tx_total * 100, 1) if tx_total > 0 else 0,
         "tx_total": tx_total,
     }
-    await cache_set(cache_key, response, ttl=30)
     return response
 
-
-@router.get("/dashboard")
-async def creator_dashboard(
-    wallet: str = Depends(get_current_wallet),   # wallet comes ONLY from validated JWT
-    supabase: Client = Depends(get_service_supabase),
-):
-    """
-    Return analytics strictly scoped to the authenticated wallet.
-    The wallet is extracted from the JWT — callers cannot request another
-    user's data by passing a different address.
-    """
-    if not wallet:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-
-    cache_key = f"analytics:dashboard:{wallet}"
-    if cached := await cache_get(cache_key):
-        return cached
-
+async def compute_creator_dashboard(wallet: str, supabase: Client) -> dict:
+    """Core logic extracted for creator dashboard rollup"""
     # ── Models owned by this creator ──────────────────────────────────────────
     models_res = supabase.table("models").select(
         "id, name, price_eth, royalty_percent, purchases, created_at, category"
@@ -260,8 +228,6 @@ async def creator_dashboard(
     )
 
     # ── Data consistency cross-check ──────────────────────────────────────────
-    # Detect if the purchases counter in models table diverges from actual rows.
-    # This is non-fatal but surfaced as a warning field so operators can re-sync.
     consistency_warnings: list[str] = []
     for m in models:
         actual_count = sum(1 for p in purchases if p["model_id"] == m["id"])
@@ -440,5 +406,58 @@ async def creator_dashboard(
         # Data quality signal — empty list means all purchase counters are consistent
         "consistency_warnings": consistency_warnings,
     }
-    await cache_set(cache_key, response, ttl=120)
     return response
+
+
+@router.get("/telemetry-summary")
+async def telemetry_summary(
+    wallet: str = Depends(get_current_wallet),
+    supabase: Client = Depends(get_service_supabase),
+):
+    """
+    Aggregated telemetry insights scoped to the authenticated wallet.
+    Returns conversion funnel, failure breakdown, and RPC health — all in one call.
+    Uses SQL-level aggregation for performance.
+    """
+    if not wallet:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    cache_key = f"analytics:telemetry:{wallet}"
+    redis_client = await get_redis()
+    
+    if cached := await cache_get(cache_key):
+        await _enqueue_rollup(wallet, "telemetry", redis_client)
+        return cached
+
+    result = await compute_telemetry_summary(wallet, supabase)
+    await cache_set(cache_key, result, ttl=60)
+    await _enqueue_rollup(wallet, "telemetry", redis_client)
+    
+    return result
+
+
+@router.get("/dashboard")
+async def creator_dashboard(
+    wallet: str = Depends(get_current_wallet),   # wallet comes ONLY from validated JWT
+    supabase: Client = Depends(get_service_supabase),
+):
+    """
+    Return analytics strictly scoped to the authenticated wallet.
+    The wallet is extracted from the JWT — callers cannot request another
+    user's data by passing a different address.
+    """
+    if not wallet:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    cache_key = f"analytics:dashboard:{wallet}"
+    redis_client = await get_redis()
+    
+    if cached := await cache_get(cache_key):
+        await _enqueue_rollup(wallet, "dashboard", redis_client)
+        return cached
+
+    result = await compute_creator_dashboard(wallet, supabase)
+    await cache_set(cache_key, result, ttl=300)
+    await _enqueue_rollup(wallet, "dashboard", redis_client)
+    
+    return result

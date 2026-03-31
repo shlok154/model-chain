@@ -13,12 +13,11 @@ interface AnalyticsEvent {
 
 // ── Persistent Session Identity ────────────────────────────────────────────────
 // Helps correlate funnels (e.g. click -> sign -> purchase -> retry) across reloads.
-let _sessionId = localStorage.getItem("sessionId");
-if (!_sessionId) {
-  _sessionId = crypto.randomUUID();
-  localStorage.setItem("sessionId", _sessionId);
-}
-export const sessionId = _sessionId;
+const stored = localStorage.getItem("mc_session_id");
+const sessionId = stored ?? crypto.randomUUID();
+if (!stored) localStorage.setItem("mc_session_id", sessionId);
+
+export { sessionId };
 
 /**
  * Lightweight telemetry wrapper

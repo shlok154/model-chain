@@ -10,6 +10,8 @@ Security model (Fix 4):
 """
 import os
 import re
+import uuid
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from supabase import create_client, Client
 from pydantic import BaseModel, Field, field_validator
@@ -195,6 +197,24 @@ async def submit_review(
 
     await cache_invalidate_prefix(f"models:detail:{model_id}")
     await cache_invalidate_prefix("models:list:")
+
+    # Enqueue a cache invalidation job for the worker
+    job_id = str(uuid.uuid4())
+    job = {
+        "id": job_id,
+        "original_id": job_id,
+        "type": "cache_invalidation",
+        "queue": "cache_invalidation",
+        "payload": {"prefix": f"models:detail:{model_id}"},
+        "retries": 0,
+        "created_at": datetime.utcnow().isoformat(),
+        "source": "api",
+        "trace": {"created_at": datetime.utcnow().isoformat()}
+    }
+    from ..redis_client import get_redis
+    redis = await get_redis()
+    await redis.lpush("cache_invalidation", json.dumps(job))
+
     return result.data
 
 

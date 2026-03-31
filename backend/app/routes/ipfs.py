@@ -18,6 +18,7 @@ import re
 import time
 import httpx
 import asyncio
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -327,16 +328,49 @@ async def register_encryption_key(
 @router.get("/key/{ipfs_hash}")
 async def get_decryption_key(
     ipfs_hash: str,
+    token: Optional[str] = None,
     wallet: str = Depends(get_current_wallet),
     settings: Settings = Depends(get_settings),
 ):
     """
     Return the AES decryption key for a model the caller has purchased.
     Purchase verification mirrors the download endpoint.
+    If 'token' is absent, ownership is verified and a short-lived token is issued.
+    If 'token' is present, the token is validated to deliver the AES key.
     """
     if not _valid_cid(ipfs_hash):
         raise HTTPException(status_code=400, detail="Invalid IPFS CID format.")
 
+    from jose import jwt
+    from datetime import datetime, timedelta
+
+    if token:
+        # 2. TOKEN VALIDATION
+        try:
+            payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+            if payload.get("type") != "download_access":
+                raise HTTPException(status_code=403, detail="Invalid token type.")
+            if payload.get("ipfs_hash") != ipfs_hash:
+                raise HTTPException(status_code=403, detail="Token IPFS hash mismatch.")
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=403, detail="Token expired.")
+        except Exception as e:
+            raise HTTPException(status_code=403, detail=f"Invalid token: {e}")
+
+        supa = create_client(settings.supabase_url, settings.supabase_service_role_key)
+        key_res = supa.table("model_encryption_keys").select("key_b64, encrypted").eq(
+            "ipfs_hash", ipfs_hash
+        ).maybe_single().execute()
+
+        if not key_res or not key_res.data:
+            raise HTTPException(status_code=404, detail="Encryption key not found for this CID.")
+
+        return {
+            "encrypted": key_res.data["encrypted"],
+            "key_b64":   key_res.data["key_b64"] if key_res.data["encrypted"] else None,
+        }
+
+    # 1. TOKEN ISSUANCE (Fallback / Primary hit without token)
     supa = create_client(settings.supabase_url, settings.supabase_service_role_key)
 
     # Resolve model + creator
@@ -357,14 +391,18 @@ async def get_decryption_key(
         if not purchase_res.data:
             raise HTTPException(status_code=403, detail="Purchase required to retrieve decryption key.")
 
-    key_res = supa.table("model_encryption_keys").select("key_b64, encrypted").eq(
-        "ipfs_hash", ipfs_hash
-    ).maybe_single().execute()
-
-    if not key_res or not key_res.data:
-        raise HTTPException(status_code=404, detail="Encryption key not found for this CID.")
-
-    return {
-        "encrypted": key_res.data["encrypted"],
-        "key_b64":   key_res.data["key_b64"] if key_res.data["encrypted"] else None,
+    # TRADEOFF ACKNOWLEDGMENT:
+    # This token is stateless and reusable within the 60s TTL.
+    # This is acceptable because: TTL is short, ownership is pre-verified,
+    # and the encryption layer still protects the content.
+    # Single-use enforcement was considered and deferred due to added
+    # Redis complexity with minimal security gain given the above constraints.
+    payload = {
+        "wallet": wallet,
+        "ipfs_hash": ipfs_hash,
+        "exp": datetime.utcnow() + timedelta(seconds=60),
+        "type": "download_access"
     }
+    encoded_token = jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+
+    return {"token": encoded_token}

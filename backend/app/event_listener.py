@@ -33,6 +33,7 @@ import json
 import logging
 import time
 import uuid as _uuid
+from datetime import datetime
 import redis.asyncio as aioredis
 from web3 import AsyncWeb3
 from web3.middleware import ExtraDataToPOAMiddleware
@@ -238,6 +239,34 @@ async def handle_model_purchased(event: dict, supabase, redis: aioredis.Redis) -
             "p_price_eth":     price_eth,
             "p_tx_hash":       tx_hash,
         }).execute()
+        
+        # Enqueue analytics rollup
+        try:
+            model_res = supabase.table("models").select("creator_address").eq("id", model_id).maybeSingle().execute()
+            if model_res and model_res.data:
+                creator_wallet = model_res.data["creator_address"]
+                key = f"analytics:refresh_lock:{creator_wallet}:dashboard"
+                acquired = await redis.set(key, "1", ex=30, nx=True)
+                if acquired:
+                    job_id = str(_uuid.uuid4())
+                    job = {
+                        "id": job_id,
+                        "original_id": job_id,
+                        "type": "analytics_rollup",
+                        "queue": "analytics_rollup",
+                        "payload": {
+                            "wallet": creator_wallet,
+                            "target": "dashboard"
+                        },
+                        "retries": 0,
+                        "created_at": datetime.utcnow().isoformat(),
+                        "source": "event_listener",
+                        "trace": {"created_at": datetime.utcnow().isoformat()}
+                    }
+                    await redis.lpush("analytics_rollup", json.dumps(job))
+        except Exception as rollup_err:
+            log.warning(f"Failed to enqueue dashboard rollup for model {model_id} purchase: {rollup_err}")
+            
     except Exception as e:
         await _dead_letter(redis, "ModelPurchased", event, str(e))
         raise

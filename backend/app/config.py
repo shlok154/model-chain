@@ -4,7 +4,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # JWT
-    jwt_secret: str = os.getenv("JWT_SECRET", "test-secret-key-minimum-32-characters-long-hardcoded-default")
+    jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # 24h
 
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
         return self.sepolia_rpc_url or self.alchemy_sepolia_url
 
     # Redis
-    redis_url: str = "redis://localhost:6379"
+    redis_url: str
 
     # Pinata
     pinata_jwt: str = ""
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
         "https://model-chain-phi.vercel.app",
     ]
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file="/app/.env", extra="ignore")
 
     def validate_security(self) -> None:
         """
@@ -57,7 +57,13 @@ class Settings(BaseSettings):
         errors: list[str] = []
 
         # JWT secret must be set and not the default
-        if self.jwt_secret in ("change-me-in-production", "", "secret", "password"):
+        if self.jwt_secret in (
+            "test-secret-key-minimum-32-characters-long-hardcoded-default",
+            "change-me-in-production",
+            "",
+            "secret",
+            "password",
+        ):
             errors.append(
                 "JWT_SECRET is set to the default placeholder value. "
                 "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
@@ -95,4 +101,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    print("ACTIVE JWT SECRET:", settings.jwt_secret)
+    print("REDIS URL:", settings.redis_url)
+    return settings

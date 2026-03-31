@@ -15,6 +15,7 @@ import {
 } from "react";
 import { logEvent } from "../lib/analytics";
 import { useWallet } from "./WalletContext";
+import { useEthersSigner } from "../lib/wagmiAdapters";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 const TOKEN_KEY = "modelchain_jwt";
@@ -37,7 +38,8 @@ interface AuthContextValue extends AuthState {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { address, provider } = useWallet();
+  const { address } = useWallet();
+  const signer = useEthersSigner();
 
   const [state, setState] = useState<AuthState>(() => {
     const stored = localStorage.getItem(TOKEN_KEY);
@@ -55,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 
   const signIn = useCallback(async () => {
-    if (!address || !provider) return;
+    if (!address || !signer) return;
     setState(s => ({ ...s, isSigning: true, authError: null }));
 
     try {
@@ -65,7 +67,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { message } = await nonceRes.json();
 
       // 2. Sign with MetaMask
-      const signer = await provider.getSigner();
       logEvent("signature_requested", { wallet: address });
       const signature = await signer.signMessage(message);
       logEvent("signature_success", { wallet: address });
@@ -88,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState(s => ({ ...s, isSigning: false, authError: err.code === 4001 ? "Signature rejected." : "Failed to sign in." }));
       logEvent("signature_rejected", { wallet: address, errorCode: err.code, errorMessage: err.message });
     }
-  }, [address, provider]);
+  }, [address, signer]);
 
   const signOut = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);

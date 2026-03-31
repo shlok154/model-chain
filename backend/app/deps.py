@@ -14,11 +14,13 @@ def _decode_token(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """Decode JWT exactly once and return the full payload."""
+    print("RAW TOKEN:", credentials.credentials)
     return decode_jwt(credentials.credentials, settings)
 
 
 def get_current_wallet(payload: dict = Depends(_decode_token)) -> str:
     """Extract and validate JWT, return wallet address."""
+    print("PAYLOAD IN DEPENDENCY:", payload)
     wallet = payload.get("wallet")
     if not wallet:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")

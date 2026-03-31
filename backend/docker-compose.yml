@@ -6,6 +6,8 @@ services:
     ports:
       - "8000:8000"
     env_file: .env
+    environment:
+      RATE_LIMIT_OVERRIDE: "false"
     depends_on:
       redis:
         condition: service_healthy
@@ -27,7 +29,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5

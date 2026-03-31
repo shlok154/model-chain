@@ -414,6 +414,13 @@ export default function ModelDetailPage() {
                   >
                     {isDownloading ? "DECRYPTING..." : "INITIALIZE DOWNLOAD ↓"}
                   </button>
+                  {hasAccess && (
+                    <ul className="flex flex-wrap justify-center items-center gap-x-4 gap-y-2 font-label text-[10px] text-on-surface-variant uppercase tracking-widest pt-2">
+                      <li className="flex items-center gap-1"><span className="text-secondary">✔</span> Verified on-chain</li>
+                      <li className="flex items-center gap-1"><span className="text-secondary">✔</span> Secure IPFS download</li>
+                      <li className="flex items-center gap-1"><span className="text-secondary">✔</span> Immutable delivery</li>
+                    </ul>
+                  )}
                 </div>
               ) : (
                 <button

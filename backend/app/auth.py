@@ -68,6 +68,7 @@ def _make_jwt(wallet: str, role: str, settings: Settings) -> str:
 
 def decode_jwt(token: str, settings: Settings) -> dict:
     try:
+        print("DECODE USING SECRET:", settings.jwt_secret)
         return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except JWTError as e:
         raise HTTPException(
@@ -208,3 +209,46 @@ async def refresh_token(
         wallet=wallet,
         role=role,
     )
+
+
+@router.post("/request-creator", response_model=TokenResponse)
+async def request_creator(
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    settings: Settings = Depends(get_settings),
+):
+    """Elevate the current user to the 'creator' role."""
+    payload = decode_jwt(credentials.credentials, settings)
+    if not payload or "wallet" not in payload:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+    
+    wallet = payload["wallet"]
+
+    try:
+        supa = create_client(settings.supabase_url, settings.supabase_service_role_key)
+        existing_res = supa.table("users").select("role").eq("wallet_address", wallet).single().execute()
+        existing_role = existing_res.data.get("role") if existing_res.data else "user"
+    except Exception as e:
+        existing_role = "user"
+
+    if existing_role == "admin":
+        role = "admin"
+    elif existing_role == "creator":
+        role = "creator"
+    else:
+        role = "creator"
+        try:
+            supa.table("users").upsert(
+                {"wallet_address": wallet, "role": role},
+                on_conflict="wallet_address",
+            ).execute()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to upsert creator role: {e}")
+
+    new_token = _make_jwt(wallet, role, settings)
+    return TokenResponse(
+        access_token=new_token,
+        expires_in=settings.jwt_expire_minutes * 60,
+        wallet=wallet,
+        role=role,
+    )
+

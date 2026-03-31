@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useAccount, useBalance, useChainId, useDisconnect } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { ethers } from "ethers";
 import type { WalletState } from "../types";
 
 const _targetChainEnv = import.meta.env.VITE_TARGET_CHAIN;
@@ -10,8 +9,6 @@ const TARGET_CHAIN_ID: number = _targetChainEnv ? Number(_targetChainEnv) : 1115
 interface WalletContextValue extends WalletState {
   connect: () => void;
   disconnect: () => void;
-  provider: ethers.BrowserProvider | null;
-  signer: ethers.JsonRpcSigner | null;
   wrongNetwork: boolean;
 }
 
@@ -55,8 +52,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     error: null,
     connect: () => openConnectModal?.(),
     disconnect: () => disconnect(),
-    provider: null,
-    signer: null,
     wrongNetwork,
   };
 
