@@ -68,7 +68,6 @@ def _make_jwt(wallet: str, role: str, settings: Settings) -> str:
 
 def decode_jwt(token: str, settings: Settings) -> dict:
     try:
-        print("DECODE USING SECRET:", settings.jwt_secret)
         return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     except JWTError as e:
         raise HTTPException(

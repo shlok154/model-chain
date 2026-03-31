@@ -87,5 +87,4 @@ coverage.json
 # macOS temp files
 ._*
 
-# Temporary Capacity Test Override
-backend/app/middleware.py
+backend/wallet_info.txt

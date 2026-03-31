@@ -6,7 +6,9 @@ from eth_account import Account
 from eth_account.messages import encode_defunct
 
 BASE_URL = "http://127.0.0.1:8000"
-PRIV_KEY = "REDACTED"
+PRIV_KEY = os.getenv("TEST_ADMIN_PRIVATE_KEY", "")
+if not PRIV_KEY:
+    raise EnvironmentError("Set TEST_ADMIN_PRIVATE_KEY env var to run this test")
 ADMIN_ADDR = "0x55eF00109A77e05fedFf51241945f2b376438065"
 
 def redis_cmd(*args):

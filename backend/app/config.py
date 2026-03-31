@@ -102,6 +102,5 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
-    print("ACTIVE JWT SECRET:", settings.jwt_secret)
     print("REDIS URL:", settings.redis_url)
     return settings

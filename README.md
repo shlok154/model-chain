@@ -163,6 +163,22 @@ System is fully deterministic and production-safe.
 
 ---
 
+## 🧪 Specialized Tests
+
+### Phase 8: Retry Correctness & Dead-Letter Replay
+
+This automated test suite validates the system's ability to handle task failures, verify dead-letter queueing, and replay failed jobs after system recovery.
+
+**Location:** `backend/tests/phase8/`
+
+**Run:**
+```bash
+# Requires TEST_ADMIN_PRIVATE_KEY environment variable
+python backend/tests/phase8/phase8_test_runner.py
+```
+
+---
+
 ## Summary
 
 A production-grade decentralized marketplace combining:
