@@ -4,7 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import "./index.css";
 import App from "./App.tsx";
 import { queryClient } from "./lib/queryClient";
-import { api, API_BASE } from "./lib/api";
+import { api } from "./lib/api";
 
 import "@rainbow-me/rainbowkit/styles.css";
 import { getDefaultConfig, RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
@@ -25,7 +25,7 @@ queryClient.prefetchQuery({
   queryKey: ["models", "list", { page: 0, limit: 20, sort_by: "created_at", order: "desc" }],
   queryFn: () =>
     api.get<{ data: any[]; total: number }>(
-      `${API_BASE}/api/models?page=0&limit=20&sort_by=created_at&order=desc`
+      "/api/models?page=0&limit=20&sort_by=created_at&order=desc"
     ).catch(() => null),
   staleTime: 30_000,
 });
