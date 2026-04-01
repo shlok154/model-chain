@@ -4,20 +4,20 @@ import { useModels } from "../hooks/useModels";
 
 const navLinks = [
   { href: "/marketplace", label: "Marketplace", icon: "storefront" },
-  { href: "/upload",      label: "Sell",         icon: "add_box" },
-  { href: "/dashboard",   label: "Dashboard",    icon: "speed" },
-  { href: "https://docs.modelchain.xyz", label: "Docs", icon: "description", external: true },
+  { href: "/upload", label: "Sell", icon: "add_box" },
+  { href: "/dashboard", label: "Dashboard", icon: "speed" },
+  { href: "https://sepolia.etherscan.io/address/0x3131f5ea556cbeBe3A09F3AB42EDb8F3C630240D", label: "Docs", icon: "description", external: true },
 ];
 
 export default function Sidebar() {
-  const location   = useLocation();
+  const location = useLocation();
   const { address, connect, isConnecting, wrongNetwork } = useWallet();
 
   const targetChainLabel = Number(import.meta.env.VITE_TARGET_CHAIN) === 1 ? "Mainnet" : "Sepolia";
 
   // Data ticker uses marketplace data keyed to most popular models
   const { data } = useModels({ sort_by: "purchases", limit: 10 });
-  const models   = data?.models ?? [];
+  const models = data?.models ?? [];
   const tickerItems = models.length > 0
     ? models.map((m) => `${m.name.toUpperCase()} SOLD FOR ${m.price} ETH`)
     : ["MODELCHAIN NETWORK ACTIVE", "CONNECTING TO NODES...", "SYSTEM STATUS: OPERATIONAL"];
@@ -53,11 +53,10 @@ export default function Sidebar() {
                 <Link
                   key={link.href}
                   to={link.href}
-                  className={`font-label text-xs uppercase tracking-widest transition-colors pb-0.5 ${
-                    isActive(link.href)
+                  className={`font-label text-xs uppercase tracking-widest transition-colors pb-0.5 ${isActive(link.href)
                       ? "text-primary border-b-2 border-primary nav-active-glow"
                       : "text-on-surface-variant hover:text-primary"
-                  }`}
+                    }`}
                 >
                   {link.label}
                 </Link>
@@ -134,9 +133,8 @@ export default function Sidebar() {
               key={link.href}
               to={link.href}
               aria-label={link.label}
-              className={`flex flex-col items-center gap-1 flex-1 py-2 transition-all duration-150 active:scale-90 ${
-                active ? "text-secondary bg-secondary/10 rounded-xl px-3" : "text-on-surface-variant"
-              }`}
+              className={`flex flex-col items-center gap-1 flex-1 py-2 transition-all duration-150 active:scale-90 ${active ? "text-secondary bg-secondary/10 rounded-xl px-3" : "text-on-surface-variant"
+                }`}
             >
               <span className="material-symbols-outlined text-xl">{link.icon}</span>
               <span className="font-label text-[10px] uppercase tracking-widest">{link.label}</span>
