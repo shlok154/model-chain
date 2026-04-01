@@ -426,7 +426,7 @@ async def run_listener():
     # Checkpoint from Redis — survives container restarts
     stored       = await _load_checkpoint(redis)
     latest_block = await w3.eth.block_number
-    from_block   = stored if stored > 0 else max(0, latest_block - 1000)
+    from_block   = stored if stored > 0 else max(0, latest_block - 50)
     log.info(f"Event listener starting from block {from_block} (latest={latest_block})")
     await _write_health(redis, "starting", from_block)
 
