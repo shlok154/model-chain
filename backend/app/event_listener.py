@@ -431,7 +431,7 @@ async def run_listener():
     await _write_health(redis, "starting", from_block)
 
     POLL_INTERVAL  = 12    # ~1 Ethereum block
-    CHUNK_SIZE     = 500   # max blocks per getLogs call
+    CHUNK_SIZE     = 10    # reduced for Alchemy free tier
     consecutive_errors = 0
     last_lock_refresh  = time.time()
 
