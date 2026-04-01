@@ -273,14 +273,29 @@ async def handle_model_purchased(event: dict, supabase, redis: aioredis.Redis) -
 
 
 async def handle_model_listed(event: dict, supabase, redis: aioredis.Redis) -> None:
-    model_id = event["args"]["modelId"]
-    creator  = event["args"]["creator"].lower()
-    tx_hash  = event["transactionHash"].hex()
+    model_id  = event["args"]["modelId"]
+    creator   = event["args"]["creator"].lower()
+    tx_hash   = event["transactionHash"].hex()
+    price     = event["args"]["price"] / 1e18
+    ipfs_hash = event["args"].get("ipfsHash", "")
 
     log.info(f"ModelListed: model={model_id} creator={creator} tx={tx_hash}")
 
     try:
-        supabase.table("models").update({"tx_hash": tx_hash}).eq("id", model_id).execute()
+        supabase.table("models").upsert({
+            "id": model_id,
+            "creator_address": creator,
+            "tx_hash": tx_hash,
+            "price_eth": price,
+            "ipfs_hash": ipfs_hash,
+            "name": ipfs_hash[:20] if ipfs_hash else f"Model #{model_id}",
+            "description": f"On-chain model listed by {creator[:10]}...",
+            "version": "1.0.0",
+            "license": "MIT",
+            "category": "NLP",
+            "royalty_percent": 10,
+        }, on_conflict="id").execute()
+
         supabase.table("users").upsert(
             {"wallet_address": creator, "role": "creator"},
             on_conflict="wallet_address",
